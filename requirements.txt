@@ -1,0 +1,13 @@
+transformers==4.38.2
+torch==2.5.1
+feedparser
+pytrends
+openai
+python-dotenv
+torchaudio==2.5.1
+TTS==0.22.0
+pydub
+elevenlabs
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib

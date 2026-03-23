@@ -28,7 +28,7 @@ MAX_TOKENS = int(os.getenv("CONTENT_MAX_TOKENS", "16384"))
 REASONING_BUDGET = int(os.getenv("CONTENT_REASONING_BUDGET", "16384"))
 TEMPERATURE = float(os.getenv("CONTENT_TEMPERATURE", "0.7"))
 TOP_P = float(os.getenv("CONTENT_TOP_P", "0.9"))
-ENABLE_THINKING = os.getenv("CONTENT_ENABLE_THINKING", "0") == "1"
+ENABLE_THINKING = os.getenv("CONTENT_ENABLE_THINKING", "1") == "1"
 STREAM_OUTPUT = os.getenv("CONTENT_STREAM", "0") == "1"
 SIMILARITY_THRESHOLD = float(os.getenv("CONTENT_DUP_SIM", "0.82"))
 

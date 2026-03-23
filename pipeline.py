@@ -2,6 +2,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -10,11 +11,58 @@ OUTPUT_DIR = ROOT / "output"
 FINAL_VIDEO_NAME = os.getenv("FINAL_VIDEO_NAME", "final.mp4")
 FINAL_VIDEO = OUTPUT_DIR / FINAL_VIDEO_NAME
 THUMBNAIL_PATH = Path(os.getenv("THUMBNAIL_PATH", str(OUTPUT_DIR / "thumbnail.jpg")))
+CHUNKS_DIR = OUTPUT_DIR / "chunks"
+FINAL_AUDIO = OUTPUT_DIR / "final.wav"
 
 
 def _run(script: str, env: dict[str, str] | None = None) -> None:
     cmd = [sys.executable, str(ROOT / script)]
     subprocess.run(cmd, check=True, env=env)
+
+
+def _has_audio_chunks() -> bool:
+    return CHUNKS_DIR.exists() and any(CHUNKS_DIR.glob("*.wav"))
+
+
+def _clear_audio_chunks() -> None:
+    if CHUNKS_DIR.exists():
+        for path in CHUNKS_DIR.glob("*.wav"):
+            try:
+                path.unlink()
+            except OSError as exc:
+                print(f"Unable to delete {path}: {exc}")
+
+
+def _run_voice_with_retries(env: dict[str, str]) -> None:
+    retries = int(os.getenv("VOICE_RETRIES", "3"))
+    backoff = float(os.getenv("VOICE_RETRY_BACKOFF", "3"))
+    last_exc: Exception | None = None
+
+    for attempt in range(1, retries + 1):
+        _clear_audio_chunks()
+        if FINAL_AUDIO.exists():
+            try:
+                FINAL_AUDIO.unlink()
+            except OSError:
+                pass
+        try:
+            _run("generating/voice.py", env=env)
+        except subprocess.CalledProcessError as exc:
+            last_exc = exc
+        if _has_audio_chunks() and FINAL_AUDIO.exists():
+            return
+
+        if attempt < retries:
+            sleep_for = backoff * attempt
+            print(
+                f"Voice chunks missing or voice failed. Retrying in {sleep_for:.1f}s "
+                f"(attempt {attempt}/{retries})..."
+            )
+            time.sleep(sleep_for)
+
+    if last_exc:
+        raise last_exc
+    raise RuntimeError("Voice chunks missing after retries.")
 
 
 def _cleanup_output_folder() -> None:
@@ -54,7 +102,7 @@ def main() -> None:
 
     voice_env = os.environ.copy()
     voice_env["VOICE_CLEANUP"] = "0"
-    _run("generating/voice.py", env=voice_env)
+    _run_voice_with_retries(voice_env)
 
     video_env = os.environ.copy()
     video_env["FINAL_VIDEO_NAME"] = FINAL_VIDEO_NAME

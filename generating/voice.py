@@ -117,6 +117,9 @@ CHUNKS_DIR.mkdir(parents=True, exist_ok=True)
 
 paths = []
 
+if not VOICE_SAMPLE.exists():
+    raise RuntimeError(f"Voice sample not found: {VOICE_SAMPLE}")
+
 for i, chunk in enumerate(chunks):
     path = CHUNKS_DIR / f"output_{i:03d}.wav"
     tts.tts_to_file(
@@ -126,6 +129,8 @@ for i, chunk in enumerate(chunks):
         file_path=str(path)
     )
     _speed_audio(path, VOICE_SPEED)
+    if not path.exists() or path.stat().st_size < 1024:
+        raise RuntimeError(f"Generated chunk is missing or too small: {path}")
     paths.append(path)
 
 combined = AudioSegment.empty()
@@ -144,6 +149,8 @@ for i, p in enumerate(paths):
 
 combined = combined.normalize()
 combined.export(str(FINAL_WAV), format="wav")
+if not FINAL_WAV.exists() or FINAL_WAV.stat().st_size < 1024:
+    raise RuntimeError("Final voice output is missing or too small.")
 
 if os.getenv("VOICE_CLEANUP", "1") == "1":
     for p in paths:

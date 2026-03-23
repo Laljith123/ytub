@@ -28,6 +28,8 @@ MAX_TOKENS = int(os.getenv("CONTENT_MAX_TOKENS", "16384"))
 REASONING_BUDGET = int(os.getenv("CONTENT_REASONING_BUDGET", "16384"))
 TEMPERATURE = float(os.getenv("CONTENT_TEMPERATURE", "0.7"))
 TOP_P = float(os.getenv("CONTENT_TOP_P", "0.9"))
+ENABLE_THINKING = os.getenv("CONTENT_ENABLE_THINKING", "0") == "1"
+STREAM_OUTPUT = os.getenv("CONTENT_STREAM", "0") == "1"
 SIMILARITY_THRESHOLD = float(os.getenv("CONTENT_DUP_SIM", "0.82"))
 
 
@@ -316,9 +318,6 @@ def _run_completion(client: OpenAI, prompt: str, enable_thinking: bool, stream: 
     for chunk in completion:
         if not chunk.choices:
             continue
-        reasoning = getattr(chunk.choices[0].delta, "reasoning_content", None)
-        if reasoning:
-            print(f"\n[Reasoning]: {reasoning}\n")
         if chunk.choices[0].delta.content is not None:
             s.append(chunk.choices[0].delta.content)
     return "".join(s).strip()
@@ -346,7 +345,7 @@ def contents(trends):
     prompt = _build_prompt(trends, repeated)
     for attempt in range(1, max_attempts + 1):
         try:
-            s = _run_completion(client, prompt, enable_thinking=True, stream=True)
+            s = _run_completion(client, prompt, enable_thinking=ENABLE_THINKING, stream=STREAM_OUTPUT)
         except Exception as exc:
             print(f"\ncontent request failed: {exc}\n")
             s = ""

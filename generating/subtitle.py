@@ -13,6 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = PROJECT_ROOT / "output"
 OUTPUT_JSON = PROJECT_ROOT / "output.json"
 CHUNKS_DIR = OUTPUT_DIR / "chunks"
+FINAL_AUDIO = OUTPUT_DIR / "final.wav"
 
 FINAL_VIDEO_NAME = os.getenv("FINAL_VIDEO_NAME", "final.mp4")
 FINAL_VIDEO = OUTPUT_DIR / FINAL_VIDEO_NAME
@@ -277,8 +278,12 @@ def main() -> None:
         raise RuntimeError(f"No audio chunks folder found: {CHUNKS_DIR}")
 
     chunk_files = sorted(CHUNKS_DIR.glob("*.wav"))
+    use_fallback_timing = False
     if not chunk_files:
-        raise RuntimeError("No audio chunks found for subtitle timing.")
+        if FINAL_AUDIO.exists():
+            use_fallback_timing = True
+        else:
+            raise RuntimeError("No audio chunks found for subtitle timing.")
 
     import json
 
@@ -298,11 +303,21 @@ def main() -> None:
 
     durations = []
     nonsilent_segments: List[List[tuple[int, int]]] = []
-    for path in chunk_files:
-        audio = AudioSegment.from_wav(str(path))
-        durations.append(len(audio) / 1000.0)
-        segments = detect_nonsilent(audio, min_silence_len=SILENCE_MIN_MS, silence_thresh=SILENCE_THRESH)
-        nonsilent_segments.append([(start, end) for start, end in segments])
+    if use_fallback_timing:
+        total_duration = _ffprobe_duration(FINAL_AUDIO)
+        word_counts = [max(1, len(chunk.split())) for chunk in chunks]
+        total_words = sum(word_counts)
+        if total_words <= 0:
+            durations = [total_duration / max(len(chunks), 1)] * max(len(chunks), 1)
+        else:
+            durations = [total_duration * (count / total_words) for count in word_counts]
+        nonsilent_segments = [[(0, int(duration * 1000))] for duration in durations]
+    else:
+        for path in chunk_files:
+            audio = AudioSegment.from_wav(str(path))
+            durations.append(len(audio) / 1000.0)
+            segments = detect_nonsilent(audio, min_silence_len=SILENCE_MIN_MS, silence_thresh=SILENCE_THRESH)
+            nonsilent_segments.append([(start, end) for start, end in segments])
 
     if len(chunks) != len(durations):
         if len(chunks) > len(durations):

@@ -202,7 +202,26 @@ def _post_with_retries(
     current_timeout = timeout
     for attempt in range(1, retries + 1):
         try:
-            return requests.post(INVOKE_URL, headers=headers, json=payload, timeout=current_timeout)
+            response = requests.post(INVOKE_URL, headers=headers, json=payload, timeout=current_timeout)
+            if response.status_code in {429, 500, 502, 503, 504}:
+                if attempt == retries:
+                    return response
+                retry_after = response.headers.get("Retry-After")
+                if retry_after:
+                    try:
+                        sleep_for = float(retry_after)
+                    except ValueError:
+                        sleep_for = backoff * attempt
+                else:
+                    sleep_for = backoff * attempt
+                print(
+                    f"Request returned {response.status_code}. Retrying in {sleep_for:.1f}s "
+                    f"(attempt {attempt}/{retries})..."
+                )
+                time.sleep(sleep_for)
+                current_timeout = int(current_timeout * 1.25)
+                continue
+            return response
         except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError) as exc:
             last_exc = exc
             if attempt == retries:
@@ -277,6 +296,7 @@ def main() -> None:
     timeout = _get_optional_int_env("NVIDIA_IMAGE_TIMEOUT") or 240
     retries = _get_optional_int_env("NVIDIA_IMAGE_RETRIES") or 3
     backoff = float(os.getenv("NVIDIA_IMAGE_RETRY_BACKOFF", "1.5"))
+    delay = float(os.getenv("NVIDIA_IMAGE_DELAY", "1"))
     width = _get_optional_int_env("NVIDIA_IMAGE_WIDTH")
     height = _get_optional_int_env("NVIDIA_IMAGE_HEIGHT")
     if not disable_size and width is None and height is None:
@@ -324,6 +344,8 @@ def main() -> None:
         if width is not None and height is not None and not disable_size:
             _ensure_target_image(out_path, width, height)
         print(f"Saved {out_path}")
+        if delay > 0:
+            time.sleep(delay)
 
 
 if __name__ == "__main__":

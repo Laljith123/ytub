@@ -21,7 +21,7 @@ SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 
 CLIENT_SECRETS = Path(os.getenv("YOUTUBE_CLIENT_SECRETS", "client_secrets.json"))
 TOKEN_FILE = Path(os.getenv("YOUTUBE_TOKEN_FILE", str(OUTPUT_DIR / "youtube_token.json")))
-PRIVACY_STATUS = os.getenv("YOUTUBE_PRIVACY_STATUS", "private")
+PRIVACY_STATUS = "public"
 CATEGORY_ID = os.getenv("YOUTUBE_CATEGORY_ID", "24")
 DEFAULT_TAGS = os.getenv(
     "YOUTUBE_TAGS",

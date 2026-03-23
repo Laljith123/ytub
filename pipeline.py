@@ -37,6 +37,15 @@ def _cleanup_output_folder() -> None:
             print(f"Unable to delete {child}: {exc}")
 
 
+def _cleanup_after_upload() -> None:
+    if OUTPUT_DIR.exists():
+        try:
+            shutil.rmtree(OUTPUT_DIR)
+            print("Cleared output folder after upload.")
+        except OSError as exc:
+            print(f"Unable to delete output folder: {exc}")
+
+
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -66,6 +75,8 @@ def main() -> None:
 
     if os.getenv("RUN_UPLOAD", "0") == "1":
         _run("upload.py")
+        if os.getenv("CLEAN_OUTPUT_AFTER_UPLOAD", "1") == "1":
+            _cleanup_after_upload()
 
 
 if __name__ == "__main__":

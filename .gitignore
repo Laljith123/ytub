@@ -23,5 +23,3 @@ client_secrets.json
 youtube_token.json
 output/youtube_token.json
 
-voices/*.wav
-voices/*.mp3

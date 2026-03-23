@@ -76,6 +76,7 @@ def _speed_audio(path: Path, speed: float) -> None:
     _run(cmd)
     temp_path.replace(path)
 
+
 if hasattr(torch.serialization, "add_safe_globals"):
     torch.serialization.add_safe_globals([XttsConfig, XttsAudioConfig])
 

@@ -1,6 +1,7 @@
 import json
 import math
 import os
+import re
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -86,6 +87,81 @@ def is_valid(data):
     return True
 
 
+def _normalize(text: str) -> str:
+    text = text.lower()
+    text = re.sub(r"[^a-z0-9\s]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _has_duplicates(items: list[str]) -> bool:
+    seen: set[str] = set()
+    for item in items:
+        norm = _normalize(item)
+        if not norm:
+            continue
+        if norm in seen:
+            return True
+        seen.add(norm)
+    return False
+
+
+def _previous_sets(file_data: list[dict]) -> tuple[set[str], set[str], set[str]]:
+    titles: set[str] = set()
+    scripts: set[str] = set()
+    images: set[str] = set()
+    for item in file_data:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "")
+        if title:
+            titles.add(_normalize(title))
+        script = item.get("script")
+        if isinstance(script, list):
+            for s in script:
+                if s:
+                    scripts.add(_normalize(str(s)))
+        elif script:
+            scripts.add(_normalize(str(script)))
+        image = item.get("image")
+        if isinstance(image, list):
+            for img in image:
+                if img:
+                    images.add(_normalize(str(img)))
+        elif image:
+            images.add(_normalize(str(image)))
+    return titles, scripts, images
+
+
+def _validate_no_repeats(data: dict, file_data: list[dict]) -> tuple[bool, str]:
+    title = str(data.get("title") or "")
+    script = data.get("script")
+    images = data.get("image")
+
+    if not isinstance(script, list) or not isinstance(images, list):
+        return False, "script/image must be lists."
+    if len(script) != len(images):
+        return False, "script/image length mismatch."
+    if _has_duplicates([str(s) for s in script]):
+        return False, "Duplicate lines inside script."
+    if _has_duplicates([str(i) for i in images]):
+        return False, "Duplicate prompts inside image list."
+
+    titles_prev, scripts_prev, images_prev = _previous_sets(file_data)
+    if title and _normalize(title) in titles_prev:
+        return False, "Title already used in output.json."
+
+    for s in script:
+        if _normalize(str(s)) in scripts_prev:
+            return False, "Script line repeats a previous output."
+
+    for img in images:
+        if _normalize(str(img)) in images_prev:
+            return False, "Image prompt repeats a previous output."
+
+    return True, ""
+
+
 def _build_prompt(trends: list[str], repeated: list[str]) -> str:
     return (
         "You are a professional YouTuber specializing in TRUE CRIME. "
@@ -103,7 +179,7 @@ def _build_prompt(trends: list[str], repeated: list[str]) -> str:
         "Rules: "
         "0. The first 5 seconds MUST be a strong hook with a sudden-stop beat. "
         "0b. Focus on the main story beats and important facts only (no filler). "
-        "Include the core facts: who, what, where, when, how — but keep it concise. "
+        "Include the core facts: who, what, where, when, how - but keep it concise. "
         "1. script MUST be a list of narration scenes. "
         "2. image MUST be a list of image prompts. "
         "3. script and image lists MUST be the SAME LENGTH. "
@@ -128,6 +204,8 @@ def _build_prompt(trends: list[str], repeated: list[str]) -> str:
         "(lowkey, no cap, vibes) sparingly. Keep it professional and safe. "
         "15. The final scene MUST end with a mystery-style question to the viewer. "
         "16. If you cannot comply, return an empty JSON object {}. "
+        "17. Do NOT repeat any lines or image prompts within the output. "
+        "18. Avoid repeating titles, lines, or image prompts from earlier videos. "
         "Return ONLY the JSON object."
     )
 
@@ -210,13 +288,17 @@ def contents(trends):
             continue
         data = extract_json(s, trends)
         if data and is_valid(data):
+            ok, reason = _validate_no_repeats(data, file_data)
+            if not ok:
+                print(f"\nretrying ({attempt}/{max_attempts})... {reason}\n")
+                continue
+            if data.get("trend") in repeated:
+                print(f"\nretrying ({attempt}/{max_attempts})... trend already used\n")
+                continue
             break
         print(f"\nretrying ({attempt}/{max_attempts})...\n")
     else:
         raise RuntimeError("Failed to get valid JSON after 3 attempts.")
-    if data["trend"] in repeated:
-        print("Trend already exists, skipping...")
-        contents(trends)
     file_data.append(data)
     with OUTPUT_JSON.open("w", encoding="utf-8") as f:
         json.dump(file_data, f, indent=2, ensure_ascii=False)

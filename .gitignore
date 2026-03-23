@@ -11,6 +11,7 @@ output.json
 
 *.wav
 *.mp3
+!voices/master.wav
 *.mp4
 *.m4a
 *.png
@@ -22,4 +23,3 @@ output.json
 client_secrets.json
 youtube_token.json
 output/youtube_token.json
-

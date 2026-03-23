@@ -28,6 +28,7 @@ MAX_TOKENS = int(os.getenv("CONTENT_MAX_TOKENS", "16384"))
 REASONING_BUDGET = int(os.getenv("CONTENT_REASONING_BUDGET", "16384"))
 TEMPERATURE = float(os.getenv("CONTENT_TEMPERATURE", "0.7"))
 TOP_P = float(os.getenv("CONTENT_TOP_P", "0.9"))
+SIMILARITY_THRESHOLD = float(os.getenv("CONTENT_DUP_SIM", "0.82"))
 
 
 def _extract_json_object(text: str) -> str | None:
@@ -94,6 +95,28 @@ def _normalize(text: str) -> str:
     return text
 
 
+def _token_set(text: str) -> set[str]:
+    text = _normalize(text)
+    return set(text.split())
+
+
+def _jaccard(a: set[str], b: set[str]) -> float:
+    if not a or not b:
+        return 0.0
+    inter = len(a & b)
+    union = len(a | b)
+    return inter / union if union else 0.0
+
+
+def _too_similar(items: list[str], threshold: float) -> bool:
+    tokens = [_token_set(item) for item in items]
+    for i in range(len(tokens)):
+        for j in range(i + 1, len(tokens)):
+            if _jaccard(tokens[i], tokens[j]) >= threshold:
+                return True
+    return False
+
+
 def _has_duplicates(items: list[str]) -> bool:
     seen: set[str] = set()
     for item in items:
@@ -133,6 +156,33 @@ def _previous_sets(file_data: list[dict]) -> tuple[set[str], set[str], set[str]]
     return titles, scripts, images
 
 
+def _previous_tokens(file_data: list[dict]) -> tuple[list[set[str]], list[set[str]], list[set[str]]]:
+    titles: list[set[str]] = []
+    scripts: list[set[str]] = []
+    images: list[set[str]] = []
+    for item in file_data:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "")
+        if title:
+            titles.append(_token_set(title))
+        script = item.get("script")
+        if isinstance(script, list):
+            for s in script:
+                if s:
+                    scripts.append(_token_set(str(s)))
+        elif script:
+            scripts.append(_token_set(str(script)))
+        image = item.get("image")
+        if isinstance(image, list):
+            for img in image:
+                if img:
+                    images.append(_token_set(str(img)))
+        elif image:
+            images.append(_token_set(str(image)))
+    return titles, scripts, images
+
+
 def _validate_no_repeats(data: dict, file_data: list[dict]) -> tuple[bool, str]:
     title = str(data.get("title") or "")
     script = data.get("script")
@@ -146,6 +196,10 @@ def _validate_no_repeats(data: dict, file_data: list[dict]) -> tuple[bool, str]:
         return False, "Duplicate lines inside script."
     if _has_duplicates([str(i) for i in images]):
         return False, "Duplicate prompts inside image list."
+    if _too_similar([str(s) for s in script], SIMILARITY_THRESHOLD):
+        return False, "Script lines too similar."
+    if _too_similar([str(i) for i in images], SIMILARITY_THRESHOLD):
+        return False, "Image prompts too similar."
 
     titles_prev, scripts_prev, images_prev = _previous_sets(file_data)
     if title and _normalize(title) in titles_prev:
@@ -158,6 +212,25 @@ def _validate_no_repeats(data: dict, file_data: list[dict]) -> tuple[bool, str]:
     for img in images:
         if _normalize(str(img)) in images_prev:
             return False, "Image prompt repeats a previous output."
+
+    prev_title_tokens, prev_script_tokens, prev_image_tokens = _previous_tokens(file_data)
+    if title:
+        title_tokens = _token_set(title)
+        for t in prev_title_tokens:
+            if _jaccard(title_tokens, t) >= SIMILARITY_THRESHOLD:
+                return False, "Title too similar to a previous output."
+
+    for s in script:
+        tokens = _token_set(str(s))
+        for prev in prev_script_tokens:
+            if _jaccard(tokens, prev) >= SIMILARITY_THRESHOLD:
+                return False, "Script line too similar to a previous output."
+
+    for img in images:
+        tokens = _token_set(str(img))
+        for prev in prev_image_tokens:
+            if _jaccard(tokens, prev) >= SIMILARITY_THRESHOLD:
+                return False, "Image prompt too similar to a previous output."
 
     return True, ""
 
@@ -206,6 +279,7 @@ def _build_prompt(trends: list[str], repeated: list[str]) -> str:
         "16. If you cannot comply, return an empty JSON object {}. "
         "17. Do NOT repeat any lines or image prompts within the output. "
         "18. Avoid repeating titles, lines, or image prompts from earlier videos. "
+        "19. Avoid paraphrasing or reusing the same phrasing from earlier videos. "
         "Return ONLY the JSON object."
     )
 

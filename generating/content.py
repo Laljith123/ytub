@@ -280,6 +280,8 @@ def _build_prompt(trends: list[str], repeated: list[str]) -> str:
         "17. Do NOT repeat any lines or image prompts within the output. "
         "18. Avoid repeating titles, lines, or image prompts from earlier videos. "
         "19. Avoid paraphrasing or reusing the same phrasing from earlier videos. "
+        "20. If none of the provided trends are usable, pick ANY real murder case "
+        "that does NOT appear in output.json and proceed. "
         "Return ONLY the JSON object."
     )
 

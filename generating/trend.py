@@ -39,8 +39,36 @@ for entry in feed.entries[:100]:
     })
 
 top_items = trends_list + news_list
-content=''
-for i, item in enumerate(top_items, 1):
+
+infamous_keywords = [
+    "infamous",
+    "notorious",
+    "serial",
+    "killer",
+    "murder",
+    "abduction",
+    "missing",
+    "cold case",
+    "unsolved",
+    "mystery",
+    "homicide",
+]
+
+def _is_infamous(title: str) -> bool:
+    t = title.lower()
+    return any(k in t for k in infamous_keywords)
+
+
+infamous_items = [item for item in top_items if _is_infamous(item.get("title", ""))]
+if len(infamous_items) >= 2:
+    # pick the two best (score if available, otherwise keep order)
+    infamous_items = sorted(infamous_items, key=lambda x: x.get("score", 0), reverse=True)[:2]
+    selected_items = infamous_items
+else:
+    selected_items = top_items
+
+content = ''
+for i, item in enumerate(selected_items, 1):
     content += f"{i}. {item['title']} ({item['source']})\n"
 content = content.strip()
 content = content.split("\n")

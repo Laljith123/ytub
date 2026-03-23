@@ -3,7 +3,7 @@ name: ownytub-shorts
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 3 * * *"
+    - cron: "30 3 * * *"
 
 jobs:
   build-and-upload:
@@ -32,8 +32,9 @@ jobs:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN_JSON }}
           RUN_UPLOAD: "1"
-          YOUTUBE_UPLOADS_PER_DAY: "10"
-          YOUTUBE_LOOP: "1"
+          YOUTUBE_UPLOADS_PER_DAY: "2"
+          YOUTUBE_LOOP: "0"
+          YOUTUBE_MAX_SUCCESS: "2"
           VIDEO_MIN_SECONDS: "40"
           VIDEO_MAX_SECONDS: "50"
           VIDEO_CLIP_SECONDS: "5"

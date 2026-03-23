@@ -23,12 +23,19 @@ CLIENT_SECRETS = Path(os.getenv("YOUTUBE_CLIENT_SECRETS", "client_secrets.json")
 TOKEN_FILE = Path(os.getenv("YOUTUBE_TOKEN_FILE", str(OUTPUT_DIR / "youtube_token.json")))
 PRIVACY_STATUS = os.getenv("YOUTUBE_PRIVACY_STATUS", "private")
 CATEGORY_ID = os.getenv("YOUTUBE_CATEGORY_ID", "24")
-DEFAULT_TAGS = os.getenv("YOUTUBE_TAGS", "shorts,true crime,documentary").split(",")
-DESCRIPTION_SUFFIX = os.getenv("YOUTUBE_DESCRIPTION_SUFFIX", "#shorts")
+DEFAULT_TAGS = os.getenv(
+    "YOUTUBE_TAGS",
+    "shorts,true crime,documentary,mystery,crime,unsolved,case,ytshorts",
+).split(",")
+DESCRIPTION_SUFFIX = os.getenv(
+    "YOUTUBE_DESCRIPTION_SUFFIX",
+    "#shorts #truecrime #mystery #crime #documentary #ytshorts",
+)
 
 UPLOADS_PER_DAY = int(os.getenv("YOUTUBE_UPLOADS_PER_DAY", "10"))
 LOOP_UPLOADS = os.getenv("YOUTUBE_LOOP", "1") == "1"
 WAIT_SECONDS = float(os.getenv("YOUTUBE_WAIT_BETWEEN_UPLOADS", "0"))
+MAX_SUCCESS_UPLOADS = int(os.getenv("YOUTUBE_MAX_SUCCESS", str(UPLOADS_PER_DAY)))
 
 VIDEO_QUEUE_DIR = Path(os.getenv("UPLOAD_QUEUE_DIR", str(OUTPUT_DIR / "queue")))
 DEFAULT_VIDEO = Path(os.getenv("UPLOAD_SINGLE_VIDEO", str(OUTPUT_DIR / "final.mp4")))
@@ -204,6 +211,8 @@ def main() -> None:
         base_description = _prompt_text("Description", default_description)
 
     total_uploads = UPLOADS_PER_DAY if LOOP_UPLOADS else min(UPLOADS_PER_DAY, len(videos))
+    if MAX_SUCCESS_UPLOADS > 0:
+        total_uploads = min(total_uploads, MAX_SUCCESS_UPLOADS)
     if total_uploads <= 0:
         raise RuntimeError("YOUTUBE_UPLOADS_PER_DAY must be > 0")
 

@@ -13,6 +13,8 @@ FINAL_VIDEO = OUTPUT_DIR / FINAL_VIDEO_NAME
 THUMBNAIL_PATH = Path(os.getenv("THUMBNAIL_PATH", str(OUTPUT_DIR / "thumbnail.jpg")))
 CHUNKS_DIR = OUTPUT_DIR / "chunks"
 FINAL_AUDIO = OUTPUT_DIR / "final.wav"
+VIDEO_DIR = OUTPUT_DIR / "video"
+FINAL_VIDEO_SILENT = VIDEO_DIR / "final_silent.mp4"
 
 
 def _run(script: str, env: dict[str, str] | None = None) -> None:
@@ -65,6 +67,51 @@ def _run_voice_with_retries(env: dict[str, str]) -> None:
     raise RuntimeError("Voice chunks missing after retries.")
 
 
+def _video_ready() -> bool:
+    if not FINAL_VIDEO.exists():
+        return False
+    try:
+        return FINAL_VIDEO.stat().st_size > 1024
+    except OSError:
+        return False
+
+
+def _run_video_with_retries(env: dict[str, str]) -> None:
+    retries = int(os.getenv("VIDEO_RETRIES", "2"))
+    backoff = float(os.getenv("VIDEO_RETRY_BACKOFF", "3"))
+    last_exc: Exception | None = None
+
+    for attempt in range(1, retries + 1):
+        if FINAL_VIDEO.exists():
+            try:
+                FINAL_VIDEO.unlink()
+            except OSError:
+                pass
+        if FINAL_VIDEO_SILENT.exists():
+            try:
+                FINAL_VIDEO_SILENT.unlink()
+            except OSError:
+                pass
+        try:
+            _run("generating/video.py", env=env)
+        except subprocess.CalledProcessError as exc:
+            last_exc = exc
+        if _video_ready():
+            return
+
+        if attempt < retries:
+            sleep_for = backoff * attempt
+            print(
+                f"Final video missing after render. Retrying in {sleep_for:.1f}s "
+                f"(attempt {attempt}/{retries})..."
+            )
+            time.sleep(sleep_for)
+
+    if last_exc:
+        raise last_exc
+    raise RuntimeError("Final video missing after retries.")
+
+
 def _cleanup_output_folder() -> None:
     if not FINAL_VIDEO.exists():
         raise RuntimeError(f"Expected final video at {FINAL_VIDEO} but it was not found.")
@@ -107,7 +154,7 @@ def main() -> None:
     video_env = os.environ.copy()
     video_env["FINAL_VIDEO_NAME"] = FINAL_VIDEO_NAME
     video_env["VIDEO_CLEANUP"] = "0"
-    _run("generating/video.py", env=video_env)
+    _run_video_with_retries(video_env)
 
     subtitle_env = os.environ.copy()
     subtitle_env["FINAL_VIDEO_NAME"] = FINAL_VIDEO_NAME

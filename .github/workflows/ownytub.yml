@@ -47,5 +47,5 @@ jobs:
           THUMBNAIL_SOURCE: "image"
           NVIDIA_IMAGE_RETRIES: "6"
           NVIDIA_IMAGE_RETRY_BACKOFF: "3"
-          NVIDIA_IMAGE_DELAY: "2"
+          NVIDIA_IMAGE_DELAY: "3"
         run: python pipeline.py

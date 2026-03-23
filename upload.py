@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import List, Tuple
 
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -177,8 +178,15 @@ def _upload_thumbnail(youtube, video_id: str, thumbnail: Path) -> None:
         return
     media = MediaFileUpload(str(thumbnail), mimetype="image/jpeg")
     request = youtube.thumbnails().set(videoId=video_id, media_body=media)
-    request.execute()
-    print("Thumbnail uploaded.")
+    try:
+        request.execute()
+        print("Thumbnail uploaded.")
+    except HttpError as exc:
+        # 403 is common if the channel isn't eligible for custom thumbnails.
+        if exc.resp is not None and exc.resp.status == 403:
+            print("Thumbnail upload forbidden (403). Skipping and continuing.")
+            return
+        raise
 
 
 def main() -> None:

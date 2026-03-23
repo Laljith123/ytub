@@ -43,5 +43,6 @@ jobs:
           SUBTITLE_RES_Y: "1920"
           SUBTITLE_POS_Y: "960"
           VOICE_SPEED: "1.25"
+          COQUI_TOS_AGREED: "1"
           THUMBNAIL_SOURCE: "image"
         run: python pipeline.py

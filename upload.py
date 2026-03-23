@@ -196,6 +196,19 @@ def _upload_thumbnail(youtube, video_id: str, thumbnail: Path) -> None:
         raise
 
 
+def _pick_thumbnail_for_video(video_path: Path) -> Path:
+    candidate = video_path.with_suffix(".jpg")
+    if candidate.exists():
+        return candidate
+    candidate = video_path.with_suffix(".jpeg")
+    if candidate.exists():
+        return candidate
+    candidate = video_path.with_suffix(".png")
+    if candidate.exists():
+        return candidate
+    return THUMBNAIL_PATH
+
+
 def main() -> None:
     youtube = _get_service()
     videos = _list_videos()
@@ -229,7 +242,7 @@ def main() -> None:
 
         print(f"\nUploading {video_path.name} ({i + 1}/{total_uploads})")
         video_id = _upload_video(youtube, video_path, title, description)
-        _upload_thumbnail(youtube, video_id, THUMBNAIL_PATH)
+        _upload_thumbnail(youtube, video_id, _pick_thumbnail_for_video(video_path))
 
         if i < total_uploads - 1:
             next_time = datetime.now() + timedelta(seconds=WAIT_SECONDS_LOCAL)

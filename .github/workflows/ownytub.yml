@@ -35,6 +35,7 @@ jobs:
           YOUTUBE_UPLOADS_PER_DAY: "5"
           YOUTUBE_LOOP: "0"
           YOUTUBE_MAX_SUCCESS: "5"
+          GENERATE_COUNT: "5"
           VIDEO_MIN_SECONDS: "40"
           VIDEO_MAX_SECONDS: "50"
           VIDEO_CLIP_SECONDS: "5"

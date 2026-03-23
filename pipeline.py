@@ -15,6 +15,8 @@ CHUNKS_DIR = OUTPUT_DIR / "chunks"
 FINAL_AUDIO = OUTPUT_DIR / "final.wav"
 VIDEO_DIR = OUTPUT_DIR / "video"
 FINAL_VIDEO_SILENT = VIDEO_DIR / "final_silent.mp4"
+QUEUE_DIR = Path(os.getenv("UPLOAD_QUEUE_DIR", str(OUTPUT_DIR / "queue")))
+GENERATE_COUNT = int(os.getenv("GENERATE_COUNT", "1"))
 
 
 def _run(script: str, env: dict[str, str] | None = None) -> None:
@@ -141,32 +143,65 @@ def _cleanup_after_upload() -> None:
             print(f"Unable to delete output folder: {exc}")
 
 
+def _queue_outputs(index: int) -> None:
+    QUEUE_DIR.mkdir(parents=True, exist_ok=True)
+    suffix = f"{index:02d}"
+    queued_video = QUEUE_DIR / f"short_{suffix}.mp4"
+    queued_thumb = QUEUE_DIR / f"short_{suffix}.jpg"
+
+    if FINAL_VIDEO.exists():
+        shutil.copy2(FINAL_VIDEO, queued_video)
+    if THUMBNAIL_PATH.exists():
+        shutil.copy2(THUMBNAIL_PATH, queued_thumb)
+
+
+def _reset_iteration_outputs() -> None:
+    for child in OUTPUT_DIR.iterdir():
+        if child == QUEUE_DIR:
+            continue
+        if child.name in {"youtube_token.json"}:
+            continue
+        try:
+            if child.is_dir():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+        except OSError as exc:
+            print(f"Unable to delete {child}: {exc}")
+
+
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    _run("generating/trend.py")
-    _run("generating/images.py")
+    for index in range(1, max(GENERATE_COUNT, 1) + 1):
+        _run("generating/trend.py")
+        _run("generating/images.py")
 
-    voice_env = os.environ.copy()
-    voice_env["VOICE_CLEANUP"] = "0"
-    _run_voice_with_retries(voice_env)
+        voice_env = os.environ.copy()
+        voice_env["VOICE_CLEANUP"] = "0"
+        _run_voice_with_retries(voice_env)
 
-    video_env = os.environ.copy()
-    video_env["FINAL_VIDEO_NAME"] = FINAL_VIDEO_NAME
-    video_env["VIDEO_CLEANUP"] = "0"
-    _run_video_with_retries(video_env)
+        video_env = os.environ.copy()
+        video_env["FINAL_VIDEO_NAME"] = FINAL_VIDEO_NAME
+        video_env["VIDEO_CLEANUP"] = "0"
+        _run_video_with_retries(video_env)
 
-    subtitle_env = os.environ.copy()
-    subtitle_env["FINAL_VIDEO_NAME"] = FINAL_VIDEO_NAME
-    _run("generating/subtitle.py", env=subtitle_env)
+        subtitle_env = os.environ.copy()
+        subtitle_env["FINAL_VIDEO_NAME"] = FINAL_VIDEO_NAME
+        _run("generating/subtitle.py", env=subtitle_env)
 
-    thumb_env = os.environ.copy()
-    thumb_env["FINAL_VIDEO_NAME"] = FINAL_VIDEO_NAME
-    _run("generating/thumbnail.py", env=thumb_env)
+        thumb_env = os.environ.copy()
+        thumb_env["FINAL_VIDEO_NAME"] = FINAL_VIDEO_NAME
+        _run("generating/thumbnail.py", env=thumb_env)
 
-    _cleanup_output_folder()
-    print(f"Saved final video: {FINAL_VIDEO}")
-    print(f"Saved thumbnail: {THUMBNAIL_PATH}")
+        if GENERATE_COUNT > 1:
+            _queue_outputs(index)
+            _reset_iteration_outputs()
+
+    if GENERATE_COUNT <= 1:
+        _cleanup_output_folder()
+        print(f"Saved final video: {FINAL_VIDEO}")
+        print(f"Saved thumbnail: {THUMBNAIL_PATH}")
 
     if os.getenv("RUN_UPLOAD", "0") == "1":
         _run("upload.py")

@@ -474,9 +474,6 @@ def contents(trends):
             if not ok:
                 print(f"\nretrying ({attempt}/{max_attempts})... {reason}\n")
                 continue
-            if data.get("trend") in repeated and not _all_trends_used(trends, repeated):
-                print(f"\nretrying ({attempt}/{max_attempts})... trend already used\n")
-                continue
             break
         print(f"\nretrying ({attempt}/{max_attempts})...\n")
     else:

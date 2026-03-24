@@ -30,6 +30,11 @@ THUMBNAIL_MAX_CHARS = int(os.getenv("THUMBNAIL_MAX_CHARS", "18"))
 THUMBNAIL_MAX_LINES = int(os.getenv("THUMBNAIL_MAX_LINES", "3"))
 TITLE_FILE = OUTPUT_DIR / "thumbnail_title.txt"
 
+if not THUMBNAIL_FONT_FILE and os.name == "nt":
+    win_font = Path(os.getenv("WINDIR", "C:\\Windows")) / "Fonts" / "arialbd.ttf"
+    if win_font.exists():
+        THUMBNAIL_FONT_FILE = str(win_font)
+
 
 def _run(cmd: list[str]) -> None:
     subprocess.run(cmd, check=True)
@@ -142,6 +147,8 @@ def main() -> None:
             str(THUMBNAIL_IMAGE_PATH),
             "-frames:v",
             "1",
+            "-update",
+            "1",
             "-vf",
             vf,
             "-q:v",
@@ -159,6 +166,8 @@ def main() -> None:
             "-i",
             str(FINAL_VIDEO),
             "-frames:v",
+            "1",
+            "-update",
             "1",
             "-vf",
             vf,

@@ -230,7 +230,8 @@ def main() -> None:
         raise RuntimeError("YOUTUBE_UPLOADS_PER_DAY must be > 0")
 
     if WAIT_SECONDS <= 0:
-        WAIT_SECONDS_LOCAL = 24 * 60 * 60 / max(total_uploads, 1)
+        # In CI/non-interactive runs, upload back-to-back to avoid long sleeps and job timeouts.
+        WAIT_SECONDS_LOCAL = 0 if NON_INTERACTIVE else (24 * 60 * 60 / max(total_uploads, 1))
     else:
         WAIT_SECONDS_LOCAL = WAIT_SECONDS
 

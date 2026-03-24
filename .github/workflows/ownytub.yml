@@ -31,11 +31,11 @@ jobs:
         env:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN_JSON }}
-          RUN_UPLOAD: "1"
-          YOUTUBE_UPLOADS_PER_DAY: "5"
+          RUN_UPLOAD: "5"
+          YOUTUBE_UPLOADS_PER_DAY: "10"
           YOUTUBE_LOOP: "0"
-          YOUTUBE_MAX_SUCCESS: "5"
-          GENERATE_COUNT: "5"
+          YOUTUBE_MAX_SUCCESS: "10"
+          GENERATE_COUNT: "10"
           VIDEO_MIN_SECONDS: "40"
           VIDEO_MAX_SECONDS: "50"
           VIDEO_CLIP_SECONDS: "5"

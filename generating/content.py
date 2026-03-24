@@ -31,6 +31,9 @@ TOP_P = float(os.getenv("CONTENT_TOP_P", "0.9"))
 ENABLE_THINKING = os.getenv("CONTENT_ENABLE_THINKING", "1") == "1"
 STREAM_OUTPUT = os.getenv("CONTENT_STREAM", "0") == "1"
 SIMILARITY_THRESHOLD = float(os.getenv("CONTENT_DUP_SIM", "0.82"))
+MAX_OUTPUT_CHARS = int(os.getenv("CONTENT_MAX_OUTPUT_CHARS", "8000"))
+MAX_NGRAM_REPEAT = int(os.getenv("CONTENT_MAX_NGRAM_REPEAT", "20"))
+FALLBACK_MAX_TOKENS = int(os.getenv("CONTENT_FALLBACK_MAX_TOKENS", "4096"))
 
 
 def _extract_json_object(text: str) -> str | None:
@@ -59,6 +62,41 @@ def _extract_json_object(text: str) -> str | None:
                 if depth == 0:
                     return text[start : i + 1]
     return None
+
+
+def _strip_reasoning_lines(text: str) -> str:
+    if not text:
+        return text
+    lines = text.splitlines()
+    filtered: list[str] = []
+    for line in lines:
+        stripped = line.lstrip()
+        if stripped.startswith("[Reasoning]") or stripped.startswith("Reasoning:"):
+            continue
+        if stripped.startswith("[Analysis]") or stripped.startswith("Analysis:"):
+            continue
+        filtered.append(line)
+    return "\n".join(filtered).strip()
+
+
+def _contains_reasoning(text: str) -> bool:
+    t = text.lower()
+    return "[reasoning]" in t or "reasoning:" in t or "[analysis]" in t or "analysis:" in t
+
+
+def _looks_glitched(text: str) -> bool:
+    if not text:
+        return False
+    if "{" not in text and len(text) > MAX_OUTPUT_CHARS:
+        return True
+    tokens = _normalize(text).split()
+    if len(tokens) < 60:
+        return False
+    counts: dict[tuple[str, str, str], int] = {}
+    for i in range(len(tokens) - 2):
+        gram = (tokens[i], tokens[i + 1], tokens[i + 2])
+        counts[gram] = counts.get(gram, 0) + 1
+    return bool(counts) and max(counts.values()) >= MAX_NGRAM_REPEAT
 
 
 def extract_json(s, trends):
@@ -284,11 +322,20 @@ def _build_prompt(trends: list[str], repeated: list[str]) -> str:
         "19. Avoid paraphrasing or reusing the same phrasing from earlier videos. "
         "20. If none of the provided trends are usable, pick ANY real murder case "
         "that does NOT appear in output.json and proceed. "
+        "21. Do NOT output any reasoning, analysis, or extra text outside JSON. "
+        "22. If you start repeating or looping, STOP and return {}. "
         "Return ONLY the JSON object."
     )
 
 
-def _run_completion(client: OpenAI, prompt: str, enable_thinking: bool, stream: bool) -> str:
+def _run_completion(
+    client: OpenAI,
+    prompt: str,
+    enable_thinking: bool,
+    stream: bool,
+    max_tokens: int | None = None,
+    stop: list[str] | None = None,
+) -> str:
     completion = client.chat.completions.create(
         model="nvidia/nemotron-3-super-120b-a12b",
         messages=[
@@ -296,19 +343,21 @@ def _run_completion(client: OpenAI, prompt: str, enable_thinking: bool, stream: 
                 "role": "system",
                 "content": (
                     "You must output ONLY valid JSON. "
-                    "No markdown, no code fences, no extra commentary."
+                    "No markdown, no code fences, no extra commentary. "
+                    "Do not output reasoning or analysis."
                 ),
             },
             {"role": "user", "content": prompt},
         ],
         temperature=TEMPERATURE,
         top_p=TOP_P,
-        max_tokens=MAX_TOKENS,
+        max_tokens=max_tokens or MAX_TOKENS,
         extra_body={
             "chat_template_kwargs": {"enable_thinking": enable_thinking},
             "reasoning_budget": REASONING_BUDGET if enable_thinking else 0,
         },
         stream=stream,
+        stop=stop,
     )
 
     if not stream:
@@ -345,15 +394,33 @@ def contents(trends):
     prompt = _build_prompt(trends, repeated)
     for attempt in range(1, max_attempts + 1):
         try:
-            s = _run_completion(client, prompt, enable_thinking=ENABLE_THINKING, stream=STREAM_OUTPUT)
+            s = _run_completion(
+                client,
+                prompt,
+                enable_thinking=ENABLE_THINKING,
+                stream=STREAM_OUTPUT,
+                stop=["\n[Reasoning]", "\nReasoning:", "\n[Analysis]", "\nAnalysis:"],
+            )
         except Exception as exc:
             print(f"\ncontent request failed: {exc}\n")
             s = ""
 
+        if s:
+            s = _strip_reasoning_lines(s)
+            if _contains_reasoning(s) or _looks_glitched(s):
+                print("\nReasoning leak or glitch detected. Retrying with strict JSON mode.\n")
+                s = ""
+
         if not s:
             # Fallback: disable thinking and streaming for a strict JSON-only response.
             try:
-                s = _run_completion(client, prompt, enable_thinking=False, stream=False)
+                s = _run_completion(
+                    client,
+                    prompt,
+                    enable_thinking=False,
+                    stream=False,
+                    max_tokens=min(MAX_TOKENS, FALLBACK_MAX_TOKENS),
+                )
             except Exception as exc:
                 print(f"\ncontent fallback failed: {exc}\n")
                 s = ""

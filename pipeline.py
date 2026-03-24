@@ -17,6 +17,8 @@ VIDEO_DIR = OUTPUT_DIR / "video"
 FINAL_VIDEO_SILENT = VIDEO_DIR / "final_silent.mp4"
 QUEUE_DIR = Path(os.getenv("UPLOAD_QUEUE_DIR", str(OUTPUT_DIR / "queue")))
 GENERATE_COUNT = int(os.getenv("GENERATE_COUNT", "1"))
+RUN_UPLOAD = os.getenv("RUN_UPLOAD", "0") == "1"
+UPLOAD_EACH = os.getenv("UPLOAD_EACH", "1") == "1"
 
 
 def _run(script: str, env: dict[str, str] | None = None) -> None:
@@ -156,6 +158,8 @@ def _queue_outputs(index: int) -> None:
 
 
 def _reset_iteration_outputs() -> None:
+    if not OUTPUT_DIR.exists():
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     for child in OUTPUT_DIR.iterdir():
         if child == QUEUE_DIR:
             continue
@@ -174,6 +178,7 @@ def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     for index in range(1, max(GENERATE_COUNT, 1) + 1):
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         _run("generating/trend.py")
         _run("generating/images.py")
 
@@ -194,6 +199,21 @@ def main() -> None:
         thumb_env["FINAL_VIDEO_NAME"] = FINAL_VIDEO_NAME
         _run("generating/thumbnail.py", env=thumb_env)
 
+        if RUN_UPLOAD and UPLOAD_EACH:
+            upload_env = os.environ.copy()
+            upload_env["UPLOAD_SINGLE_VIDEO"] = str(FINAL_VIDEO)
+            upload_env["THUMBNAIL_PATH"] = str(THUMBNAIL_PATH)
+            upload_env["YOUTUBE_UPLOADS_PER_DAY"] = "1"
+            upload_env["YOUTUBE_MAX_SUCCESS"] = "1"
+            upload_env["YOUTUBE_LOOP"] = "0"
+            upload_env["YOUTUBE_WAIT_BETWEEN_UPLOADS"] = "0"
+            _run("upload.py", env=upload_env)
+            if os.getenv("CLEAN_OUTPUT_AFTER_UPLOAD", "1") == "1":
+                _cleanup_after_upload()
+            elif GENERATE_COUNT > 1:
+                _reset_iteration_outputs()
+            continue
+
         if GENERATE_COUNT > 1:
             _queue_outputs(index)
             _reset_iteration_outputs()
@@ -203,7 +223,7 @@ def main() -> None:
         print(f"Saved final video: {FINAL_VIDEO}")
         print(f"Saved thumbnail: {THUMBNAIL_PATH}")
 
-    if os.getenv("RUN_UPLOAD", "0") == "1":
+    if RUN_UPLOAD and not UPLOAD_EACH:
         _run("upload.py")
         if os.getenv("CLEAN_OUTPUT_AFTER_UPLOAD", "1") == "1":
             _cleanup_after_upload()

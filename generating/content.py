@@ -285,6 +285,20 @@ def _all_trends_used(trends: list[str], repeated: list[str]) -> bool:
 
 def _build_prompt(trends: list[str], repeated: list[str]) -> str:
     all_used = _all_trends_used(trends, repeated)
+    trend_ids = {str(i) for i in range(1, len(trends) + 1)}
+    used = {str(t) for t in repeated if t is not None}
+    used_in_current = sorted([t for t in trend_ids if t in used], key=lambda x: int(x))
+    unused = sorted([t for t in trend_ids if t not in used], key=lambda x: int(x))
+    ignore_line = (
+        f"Do NOT choose these trend numbers from the list: {used_in_current}. " if used_in_current else ""
+    )
+    if not all_used and unused:
+        if len(unused) == 1:
+            pick_line = f"You MUST choose trend number {unused[0]} (the only unused option). "
+        else:
+            pick_line = f"Choose ONLY from these unused trend numbers: {unused}. "
+    else:
+        pick_line = ""
     trend_rule = (
         f"Select the most popular REAL true crime case from this list of trends: {trends}. "
         if not all_used
@@ -301,7 +315,8 @@ def _build_prompt(trends: list[str], repeated: list[str]) -> str:
         "It MUST be a real case (NOT movies, NOT TV shows, NOT fiction). "
         "It must be interesting but NOT overly violent or disturbing. "
         "Use safe, censored wording suitable for YouTube. "
-        f"Ignore these trends completely: {repeated}. "
+        f"{ignore_line}"
+        f"{pick_line}"
         f"Create a {int(MIN_TOTAL_SECONDS)}-{int(MAX_TOTAL_SECONDS)} second YouTube documentary package. "
         "Return ONE JSON object only (no extra text, no markdown) with these fields: "
         "{\"title\": \"...\", \"script\": [\"scene 1 narration\", \"scene 2 narration\", \"...\"], "

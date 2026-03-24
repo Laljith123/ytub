@@ -275,11 +275,29 @@ def _validate_no_repeats(data: dict, file_data: list[dict]) -> tuple[bool, str]:
     return True, ""
 
 
+def _all_trends_used(trends: list[str], repeated: list[str]) -> bool:
+    trend_ids = {str(i) for i in range(1, len(trends) + 1)}
+    if not trend_ids:
+        return False
+    used = {str(t) for t in repeated if t is not None}
+    return trend_ids.issubset(used)
+
+
 def _build_prompt(trends: list[str], repeated: list[str]) -> str:
+    all_used = _all_trends_used(trends, repeated)
+    trend_rule = (
+        f"Select the most popular REAL true crime case from this list of trends: {trends}. "
+        if not all_used
+        else (
+            f"All listed trend numbers are already used in output.json. "
+            f"Ignore the list {trends} and pick ANY real case NOT in output.json. "
+            "Set \"trend\" to \"0\"."
+        )
+    )
     return (
         "You are a professional YouTuber specializing in TRUE CRIME. "
         f"This is a YouTube Short: vertical 9:16, {int(MIN_TOTAL_SECONDS)}-{int(MAX_TOTAL_SECONDS)} seconds total. "
-        f"Select the most popular REAL true crime case from this list of trends: {trends}. "
+        f"{trend_rule}"
         "It MUST be a real case (NOT movies, NOT TV shows, NOT fiction). "
         "It must be interesting but NOT overly violent or disturbing. "
         "Use safe, censored wording suitable for YouTube. "
@@ -321,7 +339,7 @@ def _build_prompt(trends: list[str], repeated: list[str]) -> str:
         "18. Avoid repeating titles, lines, or image prompts from earlier videos. "
         "19. Avoid paraphrasing or reusing the same phrasing from earlier videos. "
         "20. If none of the provided trends are usable, pick ANY real murder case "
-        "that does NOT appear in output.json and proceed. "
+        "that does NOT appear in output.json and set \"trend\" to \"0\". "
         "21. Do NOT output any reasoning, analysis, or extra text outside JSON. "
         "22. If you start repeating or looping, STOP and return {}. "
         "Return ONLY the JSON object."
@@ -434,7 +452,7 @@ def contents(trends):
             if not ok:
                 print(f"\nretrying ({attempt}/{max_attempts})... {reason}\n")
                 continue
-            if data.get("trend") in repeated:
+            if data.get("trend") in repeated and not _all_trends_used(trends, repeated):
                 print(f"\nretrying ({attempt}/{max_attempts})... trend already used\n")
                 continue
             break

@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 from urllib.parse import quote
 
@@ -96,12 +97,8 @@ else:
     selected_items = top_items
 
 if not selected_items:
-    # fallback list if both sources are empty
-    selected_items = [
-        {"source": "Fallback", "title": "The Lindbergh baby kidnapping case"},
-        {"source": "Fallback", "title": "The Tylenol murders"},
-        {"source": "Fallback", "title": "The disappearance of Maura Murray"},
-    ]
+    print("No trends found from Google Trends or Google News. Aborting.")
+    sys.exit(1)
 
 content = ""
 for i, item in enumerate(selected_items, 1):

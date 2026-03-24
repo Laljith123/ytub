@@ -41,6 +41,9 @@ jobs:
         env:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN_JSON }}
+          UPLOAD_QUEUE_DIR: ${{ github.workspace }}\output\queue
+          THUMBNAIL_PATH: ${{ github.workspace }}\output\thumbnail.jpg
+          YOUTUBE_TOKEN_FILE: ${{ github.workspace }}\output\youtube_token.json
           RUN_UPLOAD: "5"
           YOUTUBE_UPLOADS_PER_DAY: "10"
           YOUTUBE_LOOP: "0"

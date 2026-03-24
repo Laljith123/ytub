@@ -25,12 +25,16 @@ PRIVACY_STATUS = "public"
 CATEGORY_ID = os.getenv("YOUTUBE_CATEGORY_ID", "24")
 DEFAULT_TAGS = os.getenv(
     "YOUTUBE_TAGS",
-    "shorts,true crime,documentary,mystery,crime,unsolved,case,ytshorts",
+    "shorts,ytshorts,youtubeshorts,shortsvideo,viral,trending,true crime,crime,documentary,mystery,unsolved,cold case,investigation,case file,missing person",
 ).split(",")
-DESCRIPTION_SUFFIX = os.getenv(
-    "YOUTUBE_DESCRIPTION_SUFFIX",
-    "#shorts #truecrime #mystery #crime #documentary #ytshorts",
-)
+POPULAR_HASHTAGS = os.getenv(
+    "YOUTUBE_HASHTAGS",
+    "#shorts #ytshorts #youtubeshorts #shortsvideo #viral #trending "
+    "#truecrime #mystery #crime #unsolved #coldcase #documentary",
+).strip()
+DESCRIPTION_SUFFIX = os.getenv("YOUTUBE_DESCRIPTION_SUFFIX", POPULAR_HASHTAGS)
+KEYWORDS_LINE = os.getenv("YOUTUBE_KEYWORDS_LINE", "").strip()
+REFERENCE_TEXT = os.getenv("YOUTUBE_REFERENCE_TEXT", "").strip()
 
 UPLOADS_PER_DAY = int(os.getenv("YOUTUBE_UPLOADS_PER_DAY", "10"))
 LOOP_UPLOADS = os.getenv("YOUTUBE_LOOP", "1") == "1"
@@ -128,6 +132,14 @@ def _load_defaults() -> Tuple[str, str]:
             pass
     if DESCRIPTION_SUFFIX and DESCRIPTION_SUFFIX.strip() not in description:
         description = f"{description}\n\n{DESCRIPTION_SUFFIX.strip()}"
+    if KEYWORDS_LINE:
+        description = f"{description}\n\nKeywords: {KEYWORDS_LINE}"
+    else:
+        keywords = ", ".join(t.strip() for t in DEFAULT_TAGS if t.strip())
+        if keywords:
+            description = f"{description}\n\nKeywords: {keywords}"
+    if REFERENCE_TEXT:
+        description = f"{description}\n\nReferences: {REFERENCE_TEXT}"
     return title, description
 
 

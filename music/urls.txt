@@ -1,0 +1,4 @@
+# Add one direct audio URL per line.
+# Optional format: url | title | tags (comma separated)
+# Example:
+# https://example.com/audio1.mp3 | Dark Ambient | mystery, cinematic

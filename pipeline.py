@@ -19,6 +19,7 @@ QUEUE_DIR = Path(os.getenv("UPLOAD_QUEUE_DIR", str(OUTPUT_DIR / "queue")))
 GENERATE_COUNT = int(os.getenv("GENERATE_COUNT", "1"))
 RUN_UPLOAD = os.getenv("RUN_UPLOAD", "0") == "1"
 UPLOAD_EACH = os.getenv("UPLOAD_EACH", "1") == "1"
+RUN_MUSIC = os.getenv("RUN_MUSIC", "0") == "1"
 
 
 def _run(script: str, env: dict[str, str] | None = None) -> None:
@@ -180,6 +181,8 @@ def main() -> None:
     for index in range(1, max(GENERATE_COUNT, 1) + 1):
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         _run("generating/trend.py")
+        if RUN_MUSIC:
+            _run("samplemusic.py")
         _run("generating/images.py")
 
         voice_env = os.environ.copy()

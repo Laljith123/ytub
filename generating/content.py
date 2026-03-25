@@ -359,6 +359,8 @@ def _build_prompt(trends: list[str], repeated: list[str]) -> str:
         "insane, plot twist, sus, sketchy, bro, yo). "
         "14e. Include concrete specifics (names/places/years) when known; "
         "do not invent details if unsure. "
+        "14f. Tone should feel dark, real, and investigative (no gore). "
+        "Add 1-2 subtle sensory cues (sirens, footsteps, phone buzz) if appropriate. "
         "14b. Prioritize engaging, meaningful storytelling over filler pacing; "
         "high information density is required. "
         "14c. Sound human and present: include brief personal asides or reactions "

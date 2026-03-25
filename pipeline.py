@@ -182,7 +182,7 @@ def main() -> None:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         _run("generating/trend.py")
         if RUN_MUSIC:
-            _run("samplemusic.py")
+            _run("generating/music.py")
         _run("generating/images.py")
 
         voice_env = os.environ.copy()

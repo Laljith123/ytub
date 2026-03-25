@@ -3,12 +3,15 @@ import os
 import sys
 import time
 from pathlib import Path
+import shutil
+import subprocess
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 
-ROOT = Path(__file__).resolve().parent
-MUSIC_DIR = ROOT / "music"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+MUSIC_DIR = PROJECT_ROOT / "music"
+OUTPUT_DIR = PROJECT_ROOT / "output"
 URLS_FILE = Path(os.getenv("MUSIC_URLS_FILE", str(MUSIC_DIR / "urls.txt")))
 COUNT = int(os.getenv("MUSIC_COUNT", "5"))
 USE_AI = os.getenv("MUSIC_USE_AI", "1") == "1"
@@ -16,15 +19,11 @@ MAX_CANDIDATES = int(os.getenv("MUSIC_MAX_CANDIDATES", "50"))
 HISTORY_FILE = Path(os.getenv("MUSIC_HISTORY_FILE", str(MUSIC_DIR / "history.json")))
 ALLOW_REUSE = os.getenv("MUSIC_ALLOW_REUSE", "0") == "1"
 
-SCRIPT_FILE = Path(os.getenv("MUSIC_SCRIPT_FILE", str(ROOT / "output.json")))
+SCRIPT_FILE = Path(os.getenv("MUSIC_SCRIPT_FILE", str(PROJECT_ROOT / "output.json")))
 SCRIPT_TEXT_ENV = os.getenv("MUSIC_SCRIPT_TEXT", "").strip()
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "").strip()
-
-# --- TEST INJECTION (leave empty in production) ---
-TEST_SCRIPT_TEXT = ""
-TEST_URLS: list[str] = []
-TEST_NVIDIA_KEY = ""
-# --------------------------------------------------
+SAMPLE_SECONDS = int(os.getenv("MUSIC_SAMPLE_SECONDS", "20"))
+SAMPLE_NAME = os.getenv("MUSIC_SAMPLE_NAME", "sample_music")
 
 
 def _ensure_urls_file() -> None:
@@ -45,8 +44,6 @@ def _ensure_urls_file() -> None:
 
 
 def _load_lines() -> list[str]:
-    if TEST_URLS:
-        return [line.strip() for line in TEST_URLS if str(line).strip()]
     env_urls = os.getenv("MUSIC_URLS", "").strip()
     if env_urls:
         return [line.strip() for line in env_urls.splitlines() if line.strip()]
@@ -71,8 +68,6 @@ def _parse_sources(lines: list[str]) -> list[dict]:
 
 
 def _load_script_text() -> str:
-    if TEST_SCRIPT_TEXT:
-        return TEST_SCRIPT_TEXT
     if SCRIPT_TEXT_ENV:
         return SCRIPT_TEXT_ENV
     if SCRIPT_FILE.exists():
@@ -92,15 +87,7 @@ def _load_script_text() -> str:
 
 
 def _resolve_nvidia_key() -> str:
-    if NVIDIA_API_KEY:
-        return NVIDIA_API_KEY
-    if TEST_NVIDIA_KEY:
-        return TEST_NVIDIA_KEY
-    try:
-        value = input("Enter NVIDIA_API_KEY (leave blank to skip AI selection): ").strip()
-    except EOFError:
-        return ""
-    return value
+    return NVIDIA_API_KEY
 
 
 def _extract_json_object(text: str) -> str | None:
@@ -231,6 +218,30 @@ def _download(url: str, dest: Path) -> None:
             f.write(chunk)
 
 
+def _has_ffmpeg() -> bool:
+    return shutil.which("ffmpeg") is not None
+
+
+def _write_sample_audio(source: Path) -> None:
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    target = OUTPUT_DIR / f"{SAMPLE_NAME}{source.suffix}"
+    if SAMPLE_SECONDS <= 0 or not _has_ffmpeg():
+        shutil.copy2(source, target)
+        return
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(source),
+        "-t",
+        str(SAMPLE_SECONDS),
+        "-c",
+        "copy",
+        str(target),
+    ]
+    subprocess.run(cmd, check=True)
+
+
 def main() -> None:
     lines = _load_lines()
     if not lines:
@@ -259,12 +270,15 @@ def main() -> None:
     MUSIC_DIR.mkdir(parents=True, exist_ok=True)
     manifest = []
     history_entries = []
+    first_audio: Path | None = None
     for idx, src in enumerate(picked, 1):
         ext = _ext_from_url(src["url"])
         filename = f"bg_{idx:02d}{ext}"
         target = MUSIC_DIR / filename
         if not target.exists():
             _download(src["url"], target)
+        if first_audio is None:
+            first_audio = target
         entry = {
             "filename": filename,
             "url": src["url"],
@@ -290,6 +304,8 @@ def main() -> None:
     (MUSIC_DIR / "selected.json").write_text(
         json.dumps(selected_payload, indent=2, ensure_ascii=False), encoding="utf-8"
     )
+    if first_audio is not None:
+        _write_sample_audio(first_audio)
     print(f"Saved {len(manifest)} tracks to {MUSIC_DIR}")
 
 

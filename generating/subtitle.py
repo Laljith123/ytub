@@ -33,6 +33,7 @@ MIN_WORDS_PER_LINE = int(os.getenv("SUBTITLE_MIN_WORDS_PER_LINE", "5"))
 MAX_WORDS_PER_LINE = int(os.getenv("SUBTITLE_MAX_WORDS_PER_LINE", "6"))
 SILENCE_MIN_MS = int(os.getenv("SUBTITLE_SILENCE_MIN_MS", "120"))
 SILENCE_THRESH = int(os.getenv("SUBTITLE_SILENCE_THRESH", "-42"))
+CROSSFADE_MS = int(os.getenv("VOICE_CROSSFADE_MS", "180"))
 
 
 def _run(cmd: List[str]) -> None:
@@ -315,9 +316,19 @@ def main() -> None:
     else:
         for path in chunk_files:
             audio = AudioSegment.from_wav(str(path))
-            durations.append(len(audio) / 1000.0)
-            segments = detect_nonsilent(audio, min_silence_len=SILENCE_MIN_MS, silence_thresh=SILENCE_THRESH)
-            nonsilent_segments.append([(start, end) for start, end in segments])
+            segments = detect_nonsilent(
+                audio, min_silence_len=SILENCE_MIN_MS, silence_thresh=SILENCE_THRESH
+            )
+            if segments:
+                first_start = segments[0][0]
+                last_end = segments[-1][1]
+                effective_ms = max(1, last_end - first_start)
+                durations.append(effective_ms / 1000.0)
+                adjusted = [(max(0, s - first_start), max(0, e - first_start)) for s, e in segments]
+                nonsilent_segments.append(adjusted)
+            else:
+                durations.append(len(audio) / 1000.0)
+                nonsilent_segments.append([])
 
     if len(chunks) != len(durations):
         if len(chunks) > len(durations):
@@ -345,18 +356,24 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
     lines = [header]
     current = 0.0
-    for chunk, duration, segments in zip(chunks, durations, nonsilent_segments):
+    for idx, (chunk, duration, segments) in enumerate(zip(chunks, durations, nonsilent_segments)):
         if not chunk.strip():
             current += duration
+            if idx > 0 and CROSSFADE_MS > 0:
+                current = max(0.0, current - (min(CROSSFADE_MS, int(duration * 1000)) / 1000.0))
             continue
 
         words = chunk.split()
         if not words:
             current += duration
+            if idx > 0 and CROSSFADE_MS > 0:
+                current = max(0.0, current - (min(CROSSFADE_MS, int(duration * 1000)) / 1000.0))
             continue
 
         if not segments:
             current += duration
+            if idx > 0 and CROSSFADE_MS > 0:
+                current = max(0.0, current - (min(CROSSFADE_MS, int(duration * 1000)) / 1000.0))
             continue
 
         seg_words = _allocate_words_to_segments(words, segments)
@@ -393,6 +410,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 line_offset_ms += ms
 
         current += duration
+        if idx > 0 and CROSSFADE_MS > 0:
+            current = max(0.0, current - (min(CROSSFADE_MS, int(duration * 1000)) / 1000.0))
 
     ASS_PATH.write_text("".join(lines), encoding="utf-8")
     _burn_subtitles()

@@ -55,7 +55,7 @@ jobs:
           YOUTUBE_TOKEN_FILE: ${{ github.workspace }}\output\youtube_token.json
           RUN_UPLOAD: "1"
           UPLOAD_EACH: "1"
-          RUN_MUSIC: "1"
+          RUN_MUSIC: "0"
           MUSIC_URLS: ${{ secrets.MUSIC_URLS }}
           MUSIC_USE_AI: "1"
           MUSIC_ALLOW_REUSE: "0"

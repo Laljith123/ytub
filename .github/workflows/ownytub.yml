@@ -44,7 +44,7 @@ jobs:
           UPLOAD_QUEUE_DIR: ${{ github.workspace }}\output\queue
           THUMBNAIL_PATH: ${{ github.workspace }}\output\thumbnail.jpg
           YOUTUBE_TOKEN_FILE: ${{ github.workspace }}\output\youtube_token.json
-          RUN_UPLOAD: "5"
+          RUN_UPLOAD: "1"
           UPLOAD_EACH: "1"
           YOUTUBE_UPLOADS_PER_DAY: "10"
           YOUTUBE_LOOP: "0"

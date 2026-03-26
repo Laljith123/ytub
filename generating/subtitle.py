@@ -7,6 +7,7 @@ from typing import List
 
 from pydub import AudioSegment
 from pydub.silence import detect_nonsilent
+import random
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -28,7 +29,15 @@ SUB_FONT = os.getenv("SUBTITLE_FONT", "Arial")
 SUB_FONT_SIZE = int(os.getenv("SUBTITLE_FONT_SIZE", "54"))
 HIGHLIGHT_SIZE = int(os.getenv("SUBTITLE_HIGHLIGHT_SIZE", str(SUB_FONT_SIZE + 12)))
 WORDS_PER_SECOND = float(os.getenv("SUBTITLE_WORDS_PER_SECOND", "5"))
-HIGHLIGHT_COLOR = os.getenv("SUBTITLE_HIGHLIGHT_COLOR", "&H0000FFFF")
+def _random_ass_color():
+    # Generate a random color in ASS format (&HAABBGGRR)
+    r = random.randint(0, 255)
+    g = random.randint(0, 255)
+    b = random.randint(0, 255)
+    # Alpha is 00 (opaque)
+    return f"&H00{b:02X}{g:02X}{r:02X}"
+
+HIGHLIGHT_COLOR = os.getenv("SUBTITLE_HIGHLIGHT_COLOR", _random_ass_color())
 MIN_WORDS_PER_LINE = int(os.getenv("SUBTITLE_MIN_WORDS_PER_LINE", "5"))
 MAX_WORDS_PER_LINE = int(os.getenv("SUBTITLE_MAX_WORDS_PER_LINE", "6"))
 SILENCE_MIN_MS = int(os.getenv("SUBTITLE_SILENCE_MIN_MS", "120"))
@@ -286,7 +295,6 @@ def main() -> None:
             raise RuntimeError("No audio chunks found for subtitle timing.")
 
     import json
-
     with OUTPUT_JSON.open("r", encoding="utf-8") as f:
         items = json.load(f)
     if not isinstance(items, list) or not items:

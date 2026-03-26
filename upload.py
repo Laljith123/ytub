@@ -133,13 +133,13 @@ def _load_defaults() -> Tuple[str, str]:
     if DESCRIPTION_SUFFIX and DESCRIPTION_SUFFIX.strip() not in description:
         description = f"{description}\n\n{DESCRIPTION_SUFFIX.strip()}"
     if KEYWORDS_LINE:
-        description = f"{description}\n\nKeywords: {KEYWORDS_LINE}"
+        description = f"{description}\n\n{KEYWORDS_LINE}"
     else:
         keywords = ", ".join(t.strip() for t in DEFAULT_TAGS if t.strip())
         if keywords:
-            description = f"{description}\n\nKeywords: {keywords}"
+            description = f"{description}\n\n{keywords}"
     if REFERENCE_TEXT:
-        description = f"{description}\n\nReferences: {REFERENCE_TEXT}"
+        description = f"{description}\n\n{REFERENCE_TEXT}"
     return title, description
 
 

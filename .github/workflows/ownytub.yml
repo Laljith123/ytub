@@ -37,15 +37,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-tts-
 
-      - name: Cache Music
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ github.workspace }}\music
-          key: ${{ runner.os }}-music-${{ hashFiles('music/urls.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-music-
-
       - name: Run Pipeline + Upload
         env:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
@@ -55,10 +46,6 @@ jobs:
           YOUTUBE_TOKEN_FILE: ${{ github.workspace }}\output\youtube_token.json
           RUN_UPLOAD: "1"
           UPLOAD_EACH: "1"
-          RUN_MUSIC: "0"
-          MUSIC_URLS: ${{ secrets.MUSIC_URLS }}
-          MUSIC_USE_AI: "1"
-          MUSIC_ALLOW_REUSE: "0"
           YOUTUBE_UPLOADS_PER_DAY: "10"
           YOUTUBE_LOOP: "0"
           YOUTUBE_MAX_SUCCESS: "10"

@@ -67,4 +67,4 @@ jobs:
           CONTENT_ENABLE_THINKING: "1"
           CONTENT_STREAM: "0"
           TRENDS_USE_PYTRENDS: "0"
-        run: python pipeline.py
+        run: python music.py

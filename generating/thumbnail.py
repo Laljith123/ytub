@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents
 OUTPUT_DIR = PROJECT_ROOT / "output"
 
 FINAL_VIDEO_NAME = os.getenv("FINAL_VIDEO_NAME", "final.mp4")

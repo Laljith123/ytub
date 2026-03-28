@@ -4,7 +4,7 @@ from yt_dlp import YoutubeDL
 from pathlib import Path
 import json
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents
 
 OUTPUT_JSON = PROJECT_ROOT / "output.json"
 

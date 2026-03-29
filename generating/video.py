@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Iterable, List
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = PROJECT_ROOT / "output"
 IMAGES_DIR = OUTPUT_DIR / "image"
 AUDIO_DIR = OUTPUT_DIR / "chunks"

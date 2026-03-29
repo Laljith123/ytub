@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_JSON = PROJECT_ROOT / "output.json"
 CLIP_SECONDS = float(os.getenv("VIDEO_CLIP_SECONDS", "5"))
 VIDEO_MIN_SECONDS = int(os.getenv("VIDEO_MIN_SECONDS", "40"))

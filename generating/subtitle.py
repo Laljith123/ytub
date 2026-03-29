@@ -10,7 +10,7 @@ from pydub.silence import detect_nonsilent
 import random
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = PROJECT_ROOT / "output"
 OUTPUT_JSON = PROJECT_ROOT / "output.json"
 CHUNKS_DIR = OUTPUT_DIR / "chunks"

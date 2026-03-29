@@ -13,7 +13,7 @@ from TTS.tts.models.xtts import XttsAudioConfig
 from pydub import AudioSegment
 from pydub.silence import detect_nonsilent
 
-PROJECT_ROOT = Path(__file__).resolve().parents
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = PROJECT_ROOT / "output"
 CHUNKS_DIR = OUTPUT_DIR / "chunks"
 OUTPUT_JSON = PROJECT_ROOT / "output.json"

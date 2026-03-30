@@ -105,11 +105,3 @@ def create_background_music_wav() -> Path:
     print(f"Saved background wav: {BACKGROUND_WAV}")
     return BACKGROUND_WAV
 
-
-def main() -> None:
-    print("Loading output.json...")
-    create_background_music_wav()
-
-
-if __name__ == "__main__":
-    main()

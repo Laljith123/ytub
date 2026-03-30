@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import Iterable, List
 
+from generating.music import create_background_music_wav
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = PROJECT_ROOT / "output"
@@ -46,6 +47,7 @@ def _require_tool(name: str) -> None:
 
 def _run(cmd: List[str]) -> None:
     subprocess.run(cmd, check=True)
+
 
 
 def _ffprobe_duration(path: Path) -> float:
@@ -407,6 +409,8 @@ def _cleanup_video_artifacts(segments: List[Path]) -> None:
 def main() -> None:
     _require_tool("ffmpeg")
     _require_tool("ffprobe")
+
+    create_background_music_wav()
 
     images = _list_files(IMAGES_DIR, "*.png")
     if not images:

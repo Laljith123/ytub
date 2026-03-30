@@ -77,7 +77,7 @@ def _download_audio(query: str, out_dir: Path) -> Path:
     if cookies_file:
         ydl_opts["cookiefile"] = cookies_file
     if js_runtime:
-        ydl_opts["js_runtimes"] = [js_runtime]
+        ydl_opts["js_runtimes"] = {js_runtime: {}}
 
     with YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(target, download=True)

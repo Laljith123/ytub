@@ -53,6 +53,7 @@ def _is_url(value: str) -> bool:
 def _download_audio(query: str, out_dir: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     target = query if _is_url(query) else f"ytsearch1:{query}"
+    cookies_file = os.getenv("YTDLP_COOKIES")
     ydl_opts = {
         "format": "bestaudio/best",
         "outtmpl": str(out_dir / "%(id)s.%(ext)s"),
@@ -66,6 +67,8 @@ def _download_audio(query: str, out_dir: Path) -> Path:
             }
         ],
     }
+    if cookies_file:
+        ydl_opts["cookiefile"] = cookies_file
 
     with YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(target, download=True)

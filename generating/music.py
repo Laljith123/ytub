@@ -30,7 +30,7 @@ def _file_ready(path: Path, min_bytes: int = 1024) -> bool:
         return False
 
 
-def _load_background_query(path: Path) -> str:
+def _load_background_query(path: Path) -> str | None:
     if not path.exists():
         raise RuntimeError(f"output.json not found: {path}")
     with path.open("r", encoding="utf-8") as f:
@@ -42,7 +42,7 @@ def _load_background_query(path: Path) -> str:
         raise RuntimeError("Last item in output.json is not an object")
     value = str(last.get("background_music") or "").strip()
     if not value:
-        raise RuntimeError("background_music is missing or empty in output.json")
+        return None
     return value
 
 
@@ -81,10 +81,18 @@ def _download_audio(query: str, out_dir: Path) -> Path:
     return filename
 
 
-def create_background_music_wav() -> Path:
+def create_background_music_wav() -> Path | None:
     _require_tool("ffmpeg")
 
     query = _load_background_query(OUTPUT_JSON)
+    if not query:
+        print("No background_music found in output.json; skipping music download.")
+        if BACKGROUND_WAV.exists():
+            try:
+                BACKGROUND_WAV.unlink()
+            except OSError as exc:
+                print(f"Unable to delete old background wav: {exc}")
+        return None
     print(f"Background music query: {query}")
 
     downloaded = _download_audio(query, MUSIC_DIR)
@@ -104,4 +112,3 @@ def create_background_music_wav() -> Path:
 
     print(f"Saved background wav: {BACKGROUND_WAV}")
     return BACKGROUND_WAV
-

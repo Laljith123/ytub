@@ -112,3 +112,10 @@ def create_background_music_wav() -> Path | None:
 
     print(f"Saved background wav: {BACKGROUND_WAV}")
     return BACKGROUND_WAV
+def main() -> None:
+    try:
+        create_background_music_wav()
+    except Exception as exc:
+        print(f"Error creating background music wav: {exc}")
+if __name__ == "__main__":
+    main()

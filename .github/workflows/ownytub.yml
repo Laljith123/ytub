@@ -21,6 +21,11 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - name: Install FFmpeg
         run: choco install ffmpeg -y
 
@@ -88,4 +93,6 @@ jobs:
           CONTENT_ENABLE_THINKING: "1"
           CONTENT_STREAM: "0"
           TRENDS_USE_PYTRENDS: "0"
+          YTDLP_JS_RUNTIME: "node"
+          YTDLP_PLAYER_CLIENT: "android"
         run: python pipeline.py

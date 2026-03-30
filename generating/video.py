@@ -4,7 +4,6 @@ import random
 import re
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 from typing import Iterable, List
 
@@ -48,10 +47,6 @@ def _require_tool(name: str) -> None:
 def _run(cmd: List[str]) -> None:
     subprocess.run(cmd, check=True)
 
-
-def _run_script(script: str) -> None:
-    cmd = [sys.executable, str(PROJECT_ROOT / script)]
-    subprocess.run(cmd, check=True)
 
 
 
@@ -414,8 +409,6 @@ def _cleanup_video_artifacts(segments: List[Path]) -> None:
 def main() -> None:
     _require_tool("ffmpeg")
     _require_tool("ffprobe")
-
-    _run_script("generating/music.py")
 
     images = _list_files(IMAGES_DIR, "*.png")
     if not images:

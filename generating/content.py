@@ -122,12 +122,15 @@ def extract_json(s, trends):
 def is_valid(data):
     if not isinstance(data, dict):
         return False
-    required = {"title", "script", "image", "trend"}
+    required = {"title", "script", "image", "trend","background_music" }
     if set(data.keys()) != required:
+        return False
+    bg = str(data.get("background_music") or "").strip()
+    if not bg:
         return False
     return True
 
-
+    
 def _normalize(text: str) -> str:
     text = text.lower()
     text = re.sub(r"[^a-z0-9\s]", " ", text)
@@ -312,59 +315,61 @@ def _build_prompt(trends: list[str], repeated: list[str]) -> str:
         "You are a professional YouTuber specializing in TRUE CRIME. "
         f"This is a YouTube Short: vertical 9:16, {int(MIN_TOTAL_SECONDS)}-{int(MAX_TOTAL_SECONDS)} seconds total. "
         f"{trend_rule}"
-        "It MUST be a real case (NOT movies, NOT TV shows, NOT fiction). "
-        "It must be interesting but NOT overly violent or disturbing. "
-        "Use safe, censored wording suitable for YouTube. "
+        "You MUST select a real, well-documented true crime case (NO movies, NO TV shows, NO fiction, NO urban legends). "
+        "The case must be interesting but NOT graphic, violent, or disturbing. "
+        "Use only safe, censored wording suitable for YouTube. "
         f"{ignore_line}"
         f"{pick_line}"
         f"Create a {int(MIN_TOTAL_SECONDS)}-{int(MAX_TOTAL_SECONDS)} second YouTube documentary package. "
-        "Return ONE JSON object only (no extra text, no markdown) with these fields: "
+        "Return ONE valid JSON object ONLY (no extra text, no markdown, no code blocks, no commentary) with these fields: "
         "{\"title\": \"...\", \"script\": [\"scene 1 narration\", \"scene 2 narration\", \"...\"], "
         "\"image\": [\"scene 1 image prompt\", \"scene 2 image prompt\", \"...\"], "
-        "\"trend\": \"selected trend number only\"}. "
-        "Rules: "
+        "\"trend\": \"selected trend number only\", \"background_music\": \"Exact background music most suitable for this content\"}. "
+        "STRICT RULES: "
         "0. The first 5 seconds MUST be a strong hook with a sudden-stop beat. "
-        "0b. Focus on the main story beats and important facts only (no filler, no recap). "
-        "Every line must add a new concrete detail or turning point. "
-        "Include the core facts: who, what, where, when, how - but keep it concise. "
+        "0b. Focus ONLY on the main story beats and important facts (NO filler, NO recap, NO speculation). "
+        "Every line MUST add a new, concrete detail or turning point. "
+        "Include ONLY the core facts: who, what, where, when, how. "
         "1. script MUST be a list of narration scenes. "
         "2. image MUST be a list of image prompts. "
         "3. script and image lists MUST be the SAME LENGTH. "
         f"4. Each script item = 1-2 short sentences (tight pacing ~{int(SCENE_SECONDS)}s per clip). "
         f"5. Total scenes: {MIN_SCENES}-{MAX_SCENES} "
         f"(about one scene every {int(SCENE_SECONDS)} seconds). "
-        "6. Images should describe cinematic, photorealistic, documentary b-roll visuals "
-        "   matched to the narration. Each prompt must include a clear subject, setting, "
+        "6. Images MUST describe cinematic, photorealistic, documentary b-roll visuals "
+        "   matched to the narration. Each prompt MUST include a clear subject, setting, "
         "   time-of-day, and action. Add subtle camera cues like "
         "   'slow dolly', 'tracking shot', 'handheld', 'wide establishing', 'close-up', "
         "   but still describe a single frame. Use vertical 9:16 framing cues. "
-        "7. Keep people/locations consistent across scenes where applicable "
+        "7. People/locations MUST be consistent across scenes where applicable "
         "   (same clothing, same location details). "
-        "8. Do NOT include graphic or disturbing imagery. "
-        "9. Do NOT mention movies, actors, or TV shows. "
+        "8. Do NOT include graphic, disturbing, or inappropriate imagery. "
+        "9. Do NOT mention movies, actors, TV shows, or fictional elements. "
         "10. Do NOT include scene labels like 'Scene 1'. "
         "11. Do NOT include timestamps. "
         "12. Do NOT include quotes outside JSON. "
-        "13. Write in engaging YouTube storytelling style. "
+        "13. Write in engaging YouTube storytelling style ONLY. "
         "14. Make it interactive: ask short questions to the viewer, add sudden-stop beats "
-        "(short fragments for tension), and sprinkle light Gen Z-leaning slang "
+        "(short fragments for tension), and use light Gen Z-leaning slang "
         "(lowkey, no cap, vibes) sparingly. Keep it professional and safe. "
         "14b. Prioritize engaging, meaningful storytelling over filler pacing; "
-        "high information density is required. "
+        "high information density is REQUIRED. "
         "14c. Sound human and present: include brief personal asides or reactions "
         "(a quick breath, a soft gasp, a quiet sigh, a short pause) to mirror "
-        "real narration — but remain respectful and never joke about victims. "
+        "real narration — but remain respectful and NEVER joke about victims. "
         "Empathy first, curiosity second. "
         "15. The final scene MUST end with a mystery-style question to the viewer. "
-        "16. If you cannot comply, return an empty JSON object {}. "
+        "16. If you cannot comply with ALL rules, return an empty JSON object {} ONLY. "
         "17. Do NOT repeat any lines or image prompts within the output. "
-        "18. Avoid repeating titles, lines, or image prompts from earlier videos. "
-        "19. Avoid paraphrasing or reusing the same phrasing from earlier videos. "
+        "18. Do NOT repeat or paraphrase titles, lines, or image prompts from earlier videos. "
+        "19. Do NOT reuse or paraphrase the same phrasing from earlier videos. "
         "20. If none of the provided trends are usable, pick ANY real murder case "
         "that does NOT appear in output.json and set \"trend\" to \"0\". "
         "21. Do NOT output any reasoning, analysis, or extra text outside JSON. "
-        "22. If you start repeating or looping, STOP and return {}. "
-        "Return ONLY the JSON object."
+        "22. If you start repeating or looping, STOP and return {} ONLY. "
+        "23. background_music MUST be a non-empty, specific music description string. "
+        "24. If background_music is missing or empty, return {} ONLY. "
+        "25. Output MUST be valid JSON and nothing else."
     )
 
 

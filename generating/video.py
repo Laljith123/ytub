@@ -1,10 +1,10 @@
-import importlib.util
 import math
 import os
 import random
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Iterable, List
 
@@ -49,17 +49,9 @@ def _run(cmd: List[str]) -> None:
     subprocess.run(cmd, check=True)
 
 
-def _load_music_function():
-    music_path = PROJECT_ROOT / "generating" / "music.py"
-    spec = importlib.util.spec_from_file_location("ytub_music", music_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Unable to load music module from {music_path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    func = getattr(module, "create_background_music_wav", None)
-    if func is None:
-        raise RuntimeError("create_background_music_wav not found in generating/music.py")
-    return func
+def _run_script(script: str) -> None:
+    cmd = [sys.executable, str(PROJECT_ROOT / script)]
+    subprocess.run(cmd, check=True)
 
 
 
@@ -423,8 +415,7 @@ def main() -> None:
     _require_tool("ffmpeg")
     _require_tool("ffprobe")
 
-    create_background_music_wav = _load_music_function()
-    create_background_music_wav()
+    _run_script("generating/music.py")
 
     images = _list_files(IMAGES_DIR, "*.png")
     if not images:

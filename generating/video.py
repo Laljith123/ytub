@@ -21,6 +21,8 @@ FINAL_AUDIO = OUTPUT_DIR / "final_audio.wav"
 FINAL_VIDEO_SILENT = VIDEO_DIR / "final_silent.mp4"
 FINAL_VIDEO_NAME = os.getenv("FINAL_VIDEO_NAME", "final.mp4")
 FINAL_VIDEO = OUTPUT_DIR / FINAL_VIDEO_NAME
+BACKGROUND_WAV = OUTPUT_DIR / "music" / "background.wav"
+BACKGROUND_VOLUME = float(os.getenv("BACKGROUND_MUSIC_VOLUME", "0.18"))
 
 DEFAULT_WIDTH = int(os.getenv("VIDEO_WIDTH", "1080"))
 DEFAULT_HEIGHT = int(os.getenv("VIDEO_HEIGHT", "1920"))
@@ -298,6 +300,38 @@ def _xfade_video(
 
 
 def _merge_audio_video(video_path: Path, audio_path: Path, out_path: Path) -> None:
+    if BACKGROUND_WAV.exists():
+        filter_complex = (
+            f"[2:a]volume={BACKGROUND_VOLUME:.3f}[bg];"
+            f"[1:a][bg]amix=inputs=2:duration=first:dropout_transition=2[a]"
+        )
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(video_path),
+            "-i",
+            str(audio_path),
+            "-stream_loop",
+            "-1",
+            "-i",
+            str(BACKGROUND_WAV),
+            "-filter_complex",
+            filter_complex,
+            "-map",
+            "0:v",
+            "-map",
+            "[a]",
+            "-c:v",
+            "copy",
+            "-c:a",
+            "aac",
+            "-shortest",
+            str(out_path),
+        ]
+        _run(cmd)
+        return
+
     cmd = [
         "ffmpeg",
         "-y",

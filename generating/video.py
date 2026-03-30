@@ -417,6 +417,8 @@ def main() -> None:
     audio_files = _list_files(AUDIO_DIR, "*.wav")
     if not audio_files:
         raise RuntimeError(f"No audio chunks found in {AUDIO_DIR}")
+    if not BACKGROUND_WAV.exists():
+        raise RuntimeError(f"Background music wav not found: {BACKGROUND_WAV}")
 
     durations = [_ffprobe_duration(p) for p in audio_files]
     total_audio = sum(durations)

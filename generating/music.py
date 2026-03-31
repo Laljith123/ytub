@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from yt_dlp import YoutubeDL
@@ -12,6 +13,12 @@ OUTPUT_JSON = PROJECT_ROOT / "output.json"
 
 MUSIC_DIR = OUTPUT_DIR / "music"
 BACKGROUND_WAV = MUSIC_DIR / "background.wav"
+
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 
 def _require_tool(name: str) -> None:
@@ -44,6 +51,18 @@ def _load_background_query(path: Path) -> str | None:
     if not value:
         return None
     return value
+
+
+def _safe_text(value: str) -> str:
+    if value is None:
+        return ""
+    text = str(value)
+    text = text.replace("\u2011", "-")
+    enc = sys.stdout.encoding or "utf-8"
+    try:
+        return text.encode(enc, "replace").decode(enc, "replace")
+    except Exception:
+        return text.encode("utf-8", "replace").decode("utf-8", "replace")
 
 
 def _is_url(value: str) -> bool:
@@ -105,10 +124,10 @@ def create_background_music_wav() -> Path | None:
             except OSError as exc:
                 print(f"Unable to delete old background wav: {exc}")
         return None
-    print(f"Background music query: {query}")
+    print(f"Background music query: {_safe_text(query)}")
 
     downloaded = _download_audio(query, MUSIC_DIR)
-    print(f"Downloaded audio: {downloaded}")
+    print(f"Downloaded audio: {_safe_text(downloaded)}")
 
     if BACKGROUND_WAV.exists():
         try:
@@ -122,7 +141,7 @@ def create_background_music_wav() -> Path | None:
     if not _file_ready(BACKGROUND_WAV):
         raise RuntimeError("Background wav is missing or too small.")
 
-    print(f"Saved background wav: {BACKGROUND_WAV}")
+    print(f"Saved background wav: {_safe_text(BACKGROUND_WAV)}")
     return BACKGROUND_WAV
 def main() -> None:
     try:

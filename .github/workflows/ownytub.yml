@@ -95,4 +95,5 @@ jobs:
           TRENDS_USE_PYTRENDS: "0"
           YTDLP_JS_RUNTIME: "node"
           YTDLP_PLAYER_CLIENT: "web"
+          YTDLP_REMOTE_COMPONENTS: "ejs:github"
         run: python pipeline.py

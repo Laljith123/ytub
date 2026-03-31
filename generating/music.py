@@ -74,6 +74,7 @@ def _download_audio(query: str, out_dir: Path) -> Path:
     target = query if _is_url(query) else f"ytsearch1:{query}"
     cookies_file = os.getenv("YTDLP_COOKIES")
     js_runtime = os.getenv("YTDLP_JS_RUNTIME")
+    remote_components = os.getenv("YTDLP_REMOTE_COMPONENTS")
     default_client = "web" if cookies_file else "android"
     player_client = os.getenv("YTDLP_PLAYER_CLIENT", default_client)
     if cookies_file and player_client == "android":
@@ -100,6 +101,10 @@ def _download_audio(query: str, out_dir: Path) -> Path:
         ydl_opts["cookiefile"] = cookies_file
     if js_runtime:
         ydl_opts["js_runtimes"] = {js_runtime: {}}
+    if remote_components:
+        parts = [p.strip() for p in remote_components.split(",") if p.strip()]
+        if parts:
+            ydl_opts["remote_components"] = parts
 
     with YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(target, download=True)

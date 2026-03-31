@@ -74,7 +74,8 @@ def _download_audio(query: str, out_dir: Path) -> Path:
     target = query if _is_url(query) else f"ytsearch1:{query}"
     cookies_file = os.getenv("YTDLP_COOKIES")
     js_runtime = os.getenv("YTDLP_JS_RUNTIME")
-    player_client = os.getenv("YTDLP_PLAYER_CLIENT", "android")
+    default_client = "web" if cookies_file else "android"
+    player_client = os.getenv("YTDLP_PLAYER_CLIENT", default_client)
     ydl_opts = {
         "format": "bestaudio/best",
         "outtmpl": str(out_dir / "%(id)s.%(ext)s"),

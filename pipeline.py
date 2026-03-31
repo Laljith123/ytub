@@ -163,7 +163,7 @@ def _reset_iteration_outputs() -> None:
     for child in OUTPUT_DIR.iterdir():
         if child == QUEUE_DIR:
             continue
-        if child.name in {"youtube_token.json"}:
+        if child.name in {"youtube_token.json", "music"}:
             continue
         try:
             if child.is_dir():

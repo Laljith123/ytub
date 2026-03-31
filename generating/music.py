@@ -37,7 +37,7 @@ def _file_ready(path: Path, min_bytes: int = 1024) -> bool:
         return False
 
 
-def _load_background_query(path: Path) -> str | None:
+def _load_background_query(path: Path) -> tuple[str | None, int]:
     if not path.exists():
         raise RuntimeError(f"output.json not found: {path}")
     with path.open("r", encoding="utf-8") as f:
@@ -49,8 +49,8 @@ def _load_background_query(path: Path) -> str | None:
         raise RuntimeError("Last item in output.json is not an object")
     value = str(last.get("background_music") or "").strip()
     if not value:
-        return None
-    return value
+        return None, len(data)
+    return value, len(data)
 
 
 def _safe_text(value: str) -> str:
@@ -123,7 +123,7 @@ def _download_audio(query: str, out_dir: Path) -> Path:
 def create_background_music_wav() -> Path | None:
     _require_tool("ffmpeg")
 
-    query = _load_background_query(OUTPUT_JSON)
+    query, index = _load_background_query(OUTPUT_JSON)
     if not query:
         print("No background_music found in output.json; skipping music download.")
         if BACKGROUND_WAV.exists():
@@ -149,7 +149,18 @@ def create_background_music_wav() -> Path | None:
     if not _file_ready(BACKGROUND_WAV):
         raise RuntimeError("Background wav is missing or too small.")
 
+    if index <= 0:
+        index = 1
+    versioned = MUSIC_DIR / f"background_{index:03d}.wav"
+    if versioned.resolve() != BACKGROUND_WAV.resolve():
+        try:
+            shutil.copy2(BACKGROUND_WAV, versioned)
+        except OSError as exc:
+            print(f"Unable to save versioned background wav: {exc}")
+
     print(f"Saved background wav: {_safe_text(BACKGROUND_WAV)}")
+    if versioned.exists():
+        print(f"Saved versioned background wav: {_safe_text(versioned)}")
     return BACKGROUND_WAV
 def main() -> None:
     try:

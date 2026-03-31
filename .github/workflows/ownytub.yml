@@ -94,5 +94,5 @@ jobs:
           CONTENT_STREAM: "0"
           TRENDS_USE_PYTRENDS: "0"
           YTDLP_JS_RUNTIME: "node"
-          YTDLP_PLAYER_CLIENT: "android"
+          YTDLP_PLAYER_CLIENT: "web"
         run: python pipeline.py

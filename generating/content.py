@@ -324,7 +324,7 @@ def _build_prompt(trends: list[str], repeated: list[str]) -> str:
         "Return ONE valid JSON object ONLY (no extra text, no markdown, no code blocks, no commentary) with these fields: "
         "{\"title\": \"...\", \"script\": [\"scene 1 narration\", \"scene 2 narration\", \"...\"], "
         "\"image\": [\"scene 1 image prompt\", \"scene 2 image prompt\", \"...\"], "
-        "\"trend\": \"selected trend number only\", \"background_music\": \"Exact background music most suitable for this content\"}. "
+        "\"trend\": \"selected trend number only\", \"background_music\": \"Short music search query\"}. "
         "STRICT RULES: "
         "0. The first 5 seconds MUST be a strong hook with a sudden-stop beat. "
         "0b. Focus ONLY on the main story beats and important facts (NO filler, NO recap, NO speculation). "
@@ -367,9 +367,12 @@ def _build_prompt(trends: list[str], repeated: list[str]) -> str:
         "that does NOT appear in output.json and set \"trend\" to \"0\". "
         "21. Do NOT output any reasoning, analysis, or extra text outside JSON. "
         "22. If you start repeating or looping, STOP and return {} ONLY. "
-        "23. background_music MUST be a non-empty, specific music description string. "
-        "24. If background_music is missing or empty, return {} ONLY. "
-        "25. Output MUST be valid JSON and nothing else."
+        "23. background_music MUST be a SHORT search query (4-8 words), plain ASCII, "
+        "no punctuation/emojis, no quotes, no special characters. "
+        "24. Keep it general and searchable (e.g., 'ambient piano suspense', "
+        "'dark cinematic drone'). "
+        "25. If background_music is missing or empty, return {} ONLY. "
+        "26. Output MUST be valid JSON and nothing else."
     )
 
 

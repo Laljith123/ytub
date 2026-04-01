@@ -20,6 +20,7 @@ OUTPUT_JSON = PROJECT_ROOT / "output.json"
 VOICE_SAMPLE = PROJECT_ROOT / "voices" / "master.wav"
 FINAL_WAV = OUTPUT_DIR / "final.wav"
 VOICE_SPEED = float(os.getenv("VOICE_SPEED", "1.25"))
+VOICE_GAIN_DB = float(os.getenv("VOICE_GAIN_DB", "0"))
 
 def split_for_xtts(text, max_words=40):
     paragraphs = re.split(r'\n\s*\n', text)
@@ -148,6 +149,8 @@ for i, p in enumerate(paths):
         combined = combined.append(audio, crossfade=180)
 
 combined = combined.normalize()
+if abs(VOICE_GAIN_DB) > 1e-3:
+    combined = combined.apply_gain(VOICE_GAIN_DB)
 combined.export(str(FINAL_WAV), format="wav")
 if not FINAL_WAV.exists() or FINAL_WAV.stat().st_size < 1024:
     raise RuntimeError("Final voice output is missing or too small.")

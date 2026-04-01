@@ -138,6 +138,7 @@ def _apply_gain(path: Path, gain: float) -> None:
     ]
     _run(cmd)
     temp_path.replace(path)
+    print(f"Applied background gain: {gain:.2f}x")
 
 
 def create_background_music_wav() -> Path | None:

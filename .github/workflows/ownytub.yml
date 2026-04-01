@@ -85,6 +85,7 @@ jobs:
           SUBTITLE_RES_Y: "1920"
           SUBTITLE_POS_Y: "960"
           VOICE_SPEED: "1.25"
+          VOICE_GAIN_DB: "-3"
           COQUI_TOS_AGREED: "1"
           THUMBNAIL_SOURCE: "image"
           NVIDIA_IMAGE_RETRIES: "10"
@@ -96,5 +97,6 @@ jobs:
           YTDLP_JS_RUNTIME: "node"
           YTDLP_PLAYER_CLIENT: "web"
           YTDLP_REMOTE_COMPONENTS: "ejs:github"
-          BACKGROUND_MUSIC_GAIN: "2.0"
+          BACKGROUND_MUSIC_GAIN: "1.6"
+          BACKGROUND_MUSIC_VOLUME: "0.25"
         run: python pipeline.py

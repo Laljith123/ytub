@@ -98,5 +98,5 @@ jobs:
           YTDLP_PLAYER_CLIENT: "web"
           YTDLP_REMOTE_COMPONENTS: "ejs:github"
           BACKGROUND_MUSIC_GAIN: "1.6"
-          BACKGROUND_MUSIC_VOLUME: "0.25"
+          BACKGROUND_MUSIC_VOLUME: "0.75"
         run: python pipeline.py

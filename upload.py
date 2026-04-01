@@ -197,15 +197,27 @@ def _upload_thumbnail(youtube, video_id: str, thumbnail: Path) -> None:
         return
     media = MediaFileUpload(str(thumbnail), mimetype="image/jpeg")
     request = youtube.thumbnails().set(videoId=video_id, media_body=media)
-    try:
-        request.execute()
-        print("Thumbnail uploaded.")
-    except HttpError as exc:
-        # 403 is common if the channel isn't eligible for custom thumbnails.
-        if exc.resp is not None and exc.resp.status == 403:
-            print("Thumbnail upload forbidden (403). Skipping and continuing.")
+    for attempt in range(1, 4):
+        try:
+            request.execute()
+            print("Thumbnail uploaded.")
             return
-        raise
+        except HttpError as exc:
+            status = exc.resp.status if exc.resp is not None else None
+            # 403 is common if the channel isn't eligible for custom thumbnails.
+            if status == 403:
+                print("Thumbnail upload forbidden (403). Skipping and continuing.")
+                return
+            # 404 can happen if the video isn't fully available yet.
+            if status == 404 and attempt < 3:
+                sleep_for = 10 * attempt
+                print(f"Thumbnail not ready (404). Retrying in {sleep_for}s (attempt {attempt}/3)...")
+                time.sleep(sleep_for)
+                continue
+            if status == 404:
+                print("Thumbnail upload failed (404). Skipping and continuing.")
+                return
+            raise
 
 
 def _pick_thumbnail_for_video(video_path: Path) -> Path:

@@ -13,6 +13,7 @@ OUTPUT_JSON = PROJECT_ROOT / "output.json"
 
 MUSIC_DIR = OUTPUT_DIR / "music"
 BACKGROUND_WAV = MUSIC_DIR / "background.wav"
+BACKGROUND_GAIN = float(os.getenv("BACKGROUND_MUSIC_GAIN", "1.0"))
 
 if hasattr(sys.stdout, "reconfigure"):
     try:
@@ -120,6 +121,25 @@ def _download_audio(query: str, out_dir: Path) -> Path:
     return filename
 
 
+def _apply_gain(path: Path, gain: float) -> None:
+    if abs(gain - 1.0) < 1e-3:
+        return
+    temp_path = path.with_suffix(".gain.wav")
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(path),
+        "-filter:a",
+        f"volume={gain:.3f}",
+        "-c:a",
+        "pcm_s16le",
+        str(temp_path),
+    ]
+    _run(cmd)
+    temp_path.replace(path)
+
+
 def create_background_music_wav() -> Path | None:
     _require_tool("ffmpeg")
 
@@ -145,6 +165,8 @@ def create_background_music_wav() -> Path | None:
 
     if downloaded.resolve() != BACKGROUND_WAV.resolve():
         downloaded.replace(BACKGROUND_WAV)
+
+    _apply_gain(BACKGROUND_WAV, BACKGROUND_GAIN)
 
     if not _file_ready(BACKGROUND_WAV):
         raise RuntimeError("Background wav is missing or too small.")

@@ -201,26 +201,8 @@ def _allocate_words_to_segments(words: List[str], segments: List[tuple[int, int]
 
 
 def _timed_word_text(text: str, duration: float, words_per_second: float) -> str:
-    words = re.findall(r"\S+", text)
-    if not words:
-        return ""
-    durations = _word_durations_ms(len(words), duration, words_per_second)
-    parts = []
-    current_ms = 0
-    for word, dur_ms in zip(words, durations):
-        start = current_ms
-        end = current_ms + dur_ms
-        parts.append(
-            "{"
-            f"\\fs{SUB_FONT_SIZE}"
-            "\\c&H00FFFFFF&"
-            f"\\t({start},{start},\\fs{HIGHLIGHT_SIZE}\\c{HIGHLIGHT_COLOR}&)"
-            f"\\t({end},{end},\\fs{SUB_FONT_SIZE}\\c&H00FFFFFF&)"
-            "}"
-            f"{word}"
-        )
-        current_ms = end
-    return " ".join(parts)
+    # No per-word jump/highlight styling: keep plain white text.
+    return text.strip()
 
 
 def _write_ass(chunks: List[str], durations: List[float]) -> None:

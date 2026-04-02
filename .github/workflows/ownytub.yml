@@ -65,20 +65,7 @@ jobs:
           [IO.File]::WriteAllBytes($cookiesPath, [Convert]::FromBase64String($env:YTDLP_COOKIES_B64))
           "YTDLP_COOKIES=$cookiesPath" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Random Run Decision
-        shell: pwsh
-        run: |
-          $chance = Get-Random -Minimum 1 -Maximum 101
-
-          if ($chance -le 50) {
-            echo "RUN_PIPELINE=1" >> $env:GITHUB_ENV
-            echo "Running pipeline..."
-          } else {
-            echo "RUN_PIPELINE=0" >> $env:GITHUB_ENV
-            echo "Skipping this run..."
-          }
       - name: Set Random Upload Limits
-        if: env.RUN_PIPELINE == '1'
         shell: pwsh
         run: |
           $min = 2
@@ -91,7 +78,6 @@ jobs:
           echo "Random upload limit set to: $random"
 
       - name: Run Pipeline + Upload
-        if: env.RUN_PIPELINE == '1'
         env:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN_JSON }}

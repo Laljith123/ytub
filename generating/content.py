@@ -312,10 +312,10 @@ def _build_prompt(trends: list[str], repeated: list[str]) -> str:
         )
     )
     return (
-        "You are a professional YouTuber specializing in TRUE CRIME. "
+        "You are a professional YouTuber specializing in TRUE CRIME so think harder emotion. "
         f"This is a YouTube Short: vertical 9:16, {int(MIN_TOTAL_SECONDS)}-{int(MAX_TOTAL_SECONDS)} seconds total. "
         f"{trend_rule}"
-        "You MUST select a real, well-documented true crime case (NO movies, NO TV shows, NO fiction, NO urban legends). "
+        "You MUST select a real, well-documented true crime case ifamous or current (NO movies, NO TV shows, NO fiction, NO urban legends). "
         "The case must be interesting but NOT graphic, violent, or disturbing. "
         "Use only safe, censored wording suitable for YouTube. "
         f"{ignore_line}"
@@ -326,11 +326,11 @@ def _build_prompt(trends: list[str], repeated: list[str]) -> str:
         "\"image\": [\"scene 1 image prompt\", \"scene 2 image prompt\", \"...\"], "
         "\"trend\": \"selected trend number only\", \"background_music\": \"Short music search query\"}. "
         "STRICT RULES: "
-        "0. The first 5 seconds MUST be a strong hook with a sudden-stop beat. "
+        "0. The first starting MUST be a strong hook with a genz and main points. "
         "0b. Focus ONLY on the main story beats and important facts (NO filler, NO recap, NO speculation). "
         "Every line MUST add a new, concrete detail or turning point. "
         "Include ONLY the core facts: who, what, where, when, how. "
-        "1. script MUST be a list of narration scenes. "
+        "1. script MUST be a list of narration scenes also more own sense connected day to day life. "
         "2. image MUST be a list of image prompts. "
         "3. script and image lists MUST be the SAME LENGTH. "
         f"4. Each script item = 1-2 short sentences (tight pacing ~{int(SCENE_SECONDS)}s per clip). "

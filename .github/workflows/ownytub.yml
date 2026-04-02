@@ -3,7 +3,8 @@ name: ownytub-shorts
 on:
   workflow_dispatch:
   schedule:
-    - cron: "30 3 * * *"
+    - cron: "30 21 * * *"  # 3:00 AM IST
+    - cron: "30 11 * * *"  # 5:00 PM IST
 
 jobs:
   build-and-upload:
@@ -63,6 +64,18 @@ jobs:
           [IO.File]::WriteAllBytes($cookiesPath, [Convert]::FromBase64String($env:YTDLP_COOKIES_B64))
           "YTDLP_COOKIES=$cookiesPath" | Out-File -FilePath $env:GITHUB_ENV -Append
 
+      - name: Set Random Upload Limits
+        shell: pwsh
+        run: |
+          $min = 2
+          $max = 5
+          $random = Get-Random -Minimum $min -Maximum ($max + 1)
+
+          echo "YOUTUBE_UPLOADS_PER_DAY=$random" >> $env:GITHUB_ENV
+          echo "YOUTUBE_MAX_SUCCESS=$random" >> $env:GITHUB_ENV
+
+          echo "Random upload limit set to: $random"
+
       - name: Run Pipeline + Upload
         env:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
@@ -72,9 +85,7 @@ jobs:
           YOUTUBE_TOKEN_FILE: ${{ github.workspace }}\output\youtube_token.json
           RUN_UPLOAD: "1"
           UPLOAD_EACH: "1"
-          YOUTUBE_UPLOADS_PER_DAY: "10"
           YOUTUBE_LOOP: "0"
-          YOUTUBE_MAX_SUCCESS: "10"
           GENERATE_COUNT: "10"
           VIDEO_MIN_SECONDS: "40"
           VIDEO_MAX_SECONDS: "50"
@@ -98,5 +109,5 @@ jobs:
           YTDLP_PLAYER_CLIENT: "web"
           YTDLP_REMOTE_COMPONENTS: "ejs:github"
           BACKGROUND_MUSIC_GAIN: "1.6"
-          BACKGROUND_MUSIC_VOLUME: "0.75"
+          BACKGROUND_MUSIC_VOLUME: "1.25"
         run: python pipeline.py

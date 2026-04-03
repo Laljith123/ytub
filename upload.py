@@ -1,5 +1,6 @@
 import json
 import os
+import random
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -50,6 +51,19 @@ NON_INTERACTIVE = os.getenv("NON_INTERACTIVE", "").lower() in {"1", "true", "yes
 
 CLIENT_SECRETS_JSON = os.getenv("YOUTUBE_CLIENT_SECRETS_JSON", "")
 TOKEN_JSON = os.getenv("YOUTUBE_TOKEN_JSON", "")
+
+YOUTUBE_TITLE_LIMIT = 100
+
+
+def _build_title_with_hashtags(base_title: str) -> str:
+    all_tags = [t for t in POPULAR_HASHTAGS.split() if t.startswith("#")]
+    random.shuffle(all_tags)
+    result = base_title
+    for tag in all_tags:
+        candidate = result + " " + tag
+        if len(candidate) <= YOUTUBE_TITLE_LIMIT:
+            result = candidate
+    return result.strip()
 
 
 def _write_json_env(payload: str, path: Path, label: str) -> None:
@@ -170,9 +184,10 @@ def _make_title(base: str, index: int, total: int) -> str:
 
 
 def _upload_video(youtube, video_path: Path, title: str, description: str) -> str:
+    title_with_tags = _build_title_with_hashtags(title)
     body = {
         "snippet": {
-            "title": title,
+            "title": title_with_tags,
             "description": description,
             "tags": [t.strip() for t in DEFAULT_TAGS if t.strip()],
             "categoryId": CATEGORY_ID,
@@ -204,11 +219,9 @@ def _upload_thumbnail(youtube, video_id: str, thumbnail: Path) -> None:
             return
         except HttpError as exc:
             status = exc.resp.status if exc.resp is not None else None
-            # 403 is common if the channel isn't eligible for custom thumbnails.
             if status == 403:
                 print("Thumbnail upload forbidden (403). Skipping and continuing.")
                 return
-            # 404 can happen if the video isn't fully available yet.
             if status == 404 and attempt < 3:
                 sleep_for = 10 * attempt
                 print(f"Thumbnail not ready (404). Retrying in {sleep_for}s (attempt {attempt}/3)...")
@@ -254,7 +267,6 @@ def main() -> None:
         raise RuntimeError("YOUTUBE_UPLOADS_PER_DAY must be > 0")
 
     if WAIT_SECONDS <= 0:
-        # In CI/non-interactive runs, upload back-to-back to avoid long sleeps and job timeouts.
         WAIT_SECONDS_LOCAL = 0 if NON_INTERACTIVE else (24 * 60 * 60 / max(total_uploads, 1))
     else:
         WAIT_SECONDS_LOCAL = WAIT_SECONDS

@@ -87,7 +87,7 @@ jobs:
           RUN_UPLOAD: "1"
           UPLOAD_EACH: "1"
           YOUTUBE_LOOP: "0"
-          GENERATE_COUNT: "10"
+          GENERATE_COUNT: "2"
           VIDEO_MIN_SECONDS: "40"
           VIDEO_MAX_SECONDS: "50"
           VIDEO_CLIP_SECONDS: "5"
@@ -110,5 +110,5 @@ jobs:
           YTDLP_PLAYER_CLIENT: "web"
           YTDLP_REMOTE_COMPONENTS: "ejs:github"
           BACKGROUND_MUSIC_GAIN: "1.6"
-          BACKGROUND_MUSIC_VOLUME: "1.25"
+          BACKGROUND_MUSIC_VOLUME: "1"
         run: python pipeline.py

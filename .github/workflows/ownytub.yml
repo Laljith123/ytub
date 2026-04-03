@@ -87,7 +87,7 @@ jobs:
           RUN_UPLOAD: "1"
           UPLOAD_EACH: "1"
           YOUTUBE_LOOP: "0"
-          GENERATE_COUNT: "2"
+          GENERATE_COUNT: "1"
           VIDEO_MIN_SECONDS: "40"
           VIDEO_MAX_SECONDS: "50"
           VIDEO_CLIP_SECONDS: "5"

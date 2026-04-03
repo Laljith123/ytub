@@ -330,7 +330,7 @@ def _build_prompt(trends: list[str], repeated: list[str]) -> str:
         "0b. Focus ONLY on the main story beats and important facts (NO filler, NO recap, NO speculation). "
         "Every line MUST add a new, concrete detail or turning point. "
         "Include ONLY the core facts: who, what, where, when, how. "
-        "1. script MUST be a list of narration scenes also more own sense connected day to day life. "
+        "1. script MUST be a list of narration scenes also more own sense connected day to day life and what if like that many hight niche. "
         "2. image MUST be a list of image prompts. "
         "3. script and image lists MUST be the SAME LENGTH. "
         f"4. Each script item = 1-2 short sentences (tight pacing ~{int(SCENE_SECONDS)}s per clip). "

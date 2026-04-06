@@ -38,66 +38,6 @@ def _file_ready(path: Path, min_bytes: int = 1024) -> bool:
         return False
 
 
-def _latest_wav(path: Path) -> Path | None:
-    if not path.exists():
-        return None
-    candidates = list(path.glob("*.wav"))
-    if not candidates:
-        return None
-    try:
-        return max(candidates, key=lambda p: p.stat().st_mtime)
-    except OSError:
-        return candidates[0]
-
-
-def _create_silence(path: Path, seconds: float = 2.0) -> None:
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-f",
-        "lavfi",
-        "-i",
-        "anullsrc=r=44100:cl=stereo",
-        "-t",
-        f"{seconds:.3f}",
-        "-c:a",
-        "pcm_s16le",
-        str(path),
-    ]
-    _run(cmd)
-
-
-def _fallback_background(reason: Exception | str) -> Path | None:
-    print(f"Background music download failed: {reason}")
-
-    if _file_ready(BACKGROUND_WAV):
-        print(f"Using existing background wav: {_safe_text(BACKGROUND_WAV)}")
-        return BACKGROUND_WAV
-
-    candidate = _latest_wav(MUSIC_DIR)
-    if candidate and _file_ready(candidate):
-        try:
-            if candidate.resolve() != BACKGROUND_WAV.resolve():
-                MUSIC_DIR.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(candidate, BACKGROUND_WAV)
-            if _file_ready(BACKGROUND_WAV):
-                print(f"Reused cached background wav: {_safe_text(BACKGROUND_WAV)}")
-                return BACKGROUND_WAV
-        except OSError as exc:
-            print(f"Unable to reuse cached background wav: {exc}")
-
-    try:
-        MUSIC_DIR.mkdir(parents=True, exist_ok=True)
-        _create_silence(BACKGROUND_WAV)
-        if _file_ready(BACKGROUND_WAV):
-            print(f"Created silent background wav fallback: {_safe_text(BACKGROUND_WAV)}")
-            return BACKGROUND_WAV
-    except Exception as exc:
-        print(f"Unable to create silent background wav: {exc}")
-
-    return None
-
-
 def _load_background_query(path: Path) -> tuple[str | None, int]:
     if not path.exists():
         raise RuntimeError(f"output.json not found: {path}")
@@ -226,13 +166,7 @@ def create_background_music_wav() -> Path | None:
         return None
     print(f"Background music query: {_safe_text(query)}")
 
-    try:
-        downloaded = _download_audio(query, MUSIC_DIR)
-    except Exception as exc:
-        fallback = _fallback_background(exc)
-        if fallback is not None:
-            return fallback
-        raise
+    downloaded = _download_audio(query, MUSIC_DIR)
     print(f"Downloaded audio: {_safe_text(downloaded)}")
 
     if BACKGROUND_WAV.exists():

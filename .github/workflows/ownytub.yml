@@ -3,8 +3,11 @@ name: ownytub-shorts
 on:
   workflow_dispatch:
   schedule:
+    # 🌅 Morning window (1–7 AM IST → 19–1 UTC)
     - cron: "0 19-23 * * *"
     - cron: "0 0-1 * * *"
+
+    # 🌇 Evening window (2–7 PM IST → 8–13 UTC)
     - cron: "0 8-13 * * *"
 
 jobs:
@@ -65,7 +68,29 @@ jobs:
           [IO.File]::WriteAllBytes($cookiesPath, [Convert]::FromBase64String($env:YTDLP_COOKIES_B64))
           "YTDLP_COOKIES=$cookiesPath" | Out-File -FilePath $env:GITHUB_ENV -Append
 
+      - name: Use Edge cookies (self-hosted fallback)
+        if: ${{ !env.YTDLP_COOKIES_B64 }}
+        shell: pwsh
+        run: |
+          "YTDLP_COOKIES_FROM_BROWSER=edge" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      # 🎲 Randomly decide whether to run (≈50% chance)
+      - name: Random Run Decision
+        shell: pwsh
+        run: |
+          $chance = Get-Random -Minimum 1 -Maximum 101
+
+          if ($chance -le 50) {
+            echo "RUN_PIPELINE=1" >> $env:GITHUB_ENV
+            echo "Running pipeline..."
+          } else {
+            echo "RUN_PIPELINE=0" >> $env:GITHUB_ENV
+            echo "Skipping this run..."
+          }
+
+      # 🎯 Random upload limit (2–5)
       - name: Set Random Upload Limits
+        if: env.RUN_PIPELINE == '1'
         shell: pwsh
         run: |
           $min = 2
@@ -78,6 +103,7 @@ jobs:
           echo "Random upload limit set to: $random"
 
       - name: Run Pipeline + Upload
+        if: env.RUN_PIPELINE == '1'
         env:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN_JSON }}
@@ -87,7 +113,7 @@ jobs:
           RUN_UPLOAD: "1"
           UPLOAD_EACH: "1"
           YOUTUBE_LOOP: "0"
-          GENERATE_COUNT: "1"
+          GENERATE_COUNT: "10"
           VIDEO_MIN_SECONDS: "40"
           VIDEO_MAX_SECONDS: "50"
           VIDEO_CLIP_SECONDS: "5"
@@ -100,8 +126,8 @@ jobs:
           VOICE_GAIN_DB: "-3"
           COQUI_TOS_AGREED: "1"
           THUMBNAIL_SOURCE: "image"
-          NVIDIA_IMAGE_RETRIES: "20"
-          NVIDIA_IMAGE_RETRY_BACKOFF: "10"
+          NVIDIA_IMAGE_RETRIES: "10"
+          NVIDIA_IMAGE_RETRY_BACKOFF: "3"
           NVIDIA_IMAGE_DELAY: "3"
           CONTENT_ENABLE_THINKING: "1"
           CONTENT_STREAM: "0"
@@ -110,5 +136,5 @@ jobs:
           YTDLP_PLAYER_CLIENT: "web"
           YTDLP_REMOTE_COMPONENTS: "ejs:github"
           BACKGROUND_MUSIC_GAIN: "1.6"
-          BACKGROUND_MUSIC_VOLUME: "1"
+          BACKGROUND_MUSIC_VOLUME: "0.25"
         run: python pipeline.py

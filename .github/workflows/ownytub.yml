@@ -74,19 +74,16 @@ jobs:
         run: |
           "YTDLP_COOKIES_FROM_BROWSER=edge" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      # 🎲 Randomly decide whether to run (≈50% chance)
-      - name: Random Run Decision
+      # 🎲 Always run, but randomize how many to generate (>=1)
+      - name: Random Generate Count
         shell: pwsh
         run: |
-          $chance = Get-Random -Minimum 1 -Maximum 101
-
-          if ($chance -le 50) {
-            echo "RUN_PIPELINE=1" >> $env:GITHUB_ENV
-            echo "Running pipeline..."
-          } else {
-            echo "RUN_PIPELINE=0" >> $env:GITHUB_ENV
-            echo "Skipping this run..."
-          }
+          $min = 1
+          $max = 5
+          $random = Get-Random -Minimum $min -Maximum ($max + 1)
+          echo "RUN_PIPELINE=1" >> $env:GITHUB_ENV
+          echo "GENERATE_COUNT=$random" >> $env:GITHUB_ENV
+          echo "Generate count set to: $random"
 
       # 🎯 Random upload limit (2–5)
       - name: Set Random Upload Limits
@@ -113,7 +110,6 @@ jobs:
           RUN_UPLOAD: "1"
           UPLOAD_EACH: "1"
           YOUTUBE_LOOP: "0"
-          GENERATE_COUNT: "10"
           VIDEO_MIN_SECONDS: "40"
           VIDEO_MAX_SECONDS: "50"
           VIDEO_CLIP_SECONDS: "5"

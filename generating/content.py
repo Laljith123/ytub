@@ -522,20 +522,6 @@ def contents(trends):
                 s = ""
 
         if not s:
-            # Fallback: disable thinking and streaming for a strict JSON-only response.
-            try:
-                s = _run_completion(
-                    client,
-                    prompt,
-                    enable_thinking=False,
-                    stream=False,
-                    max_tokens=min(MAX_TOKENS, FALLBACK_MAX_TOKENS),
-                )
-            except Exception as exc:
-                print(f"\ncontent fallback failed: {exc}\n")
-                s = ""
-
-        if not s:
             print(f"\nempty response, retrying ({attempt}/{max_attempts})...\n")
             continue
         data = extract_json(s, trends)

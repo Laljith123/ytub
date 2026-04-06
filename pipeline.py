@@ -186,7 +186,7 @@ def main() -> None:
         voice_env["VOICE_CLEANUP"] = "0"
         _run_voice_with_retries(voice_env)
 
-        _run("generating/music.py")
+        # Music generation disabled by request; continue without background music.
 
         video_env = os.environ.copy()
         video_env["FINAL_VIDEO_NAME"] = FINAL_VIDEO_NAME

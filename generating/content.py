@@ -128,6 +128,9 @@ def is_valid(data):
     bg = str(data.get("background_music") or "").strip()
     if not bg:
         return False
+    trend = str(data.get("trend") or "").strip()
+    if not trend or trend.isdigit():
+        return False
     return True
 
     
@@ -136,6 +139,35 @@ def _normalize(text: str) -> str:
     text = re.sub(r"[^a-z0-9\s]", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
+
+
+def _strip_trend_text(text: str) -> str:
+    if not text:
+        return ""
+    value = str(text).strip()
+    value = re.sub(r"^\s*\d+\s*[\.\)\-]\s*", "", value)
+    value = re.sub(r"^\s*\d+\s+", "", value)
+    value = re.sub(r"\s*\([^)]*\)\s*$", "", value)
+    return value.strip()
+
+
+def _clean_trend_list(items: list[str], *, allow_numeric: bool = True) -> list[str]:
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        if item is None:
+            continue
+        value = _strip_trend_text(str(item))
+        if not value:
+            continue
+        if not allow_numeric and value.isdigit():
+            continue
+        norm = _normalize(value)
+        if not norm or norm in seen:
+            continue
+        cleaned.append(value)
+        seen.add(norm)
+    return cleaned
 
 
 def _token_set(text: str) -> set[str]:
@@ -226,10 +258,26 @@ def _previous_tokens(file_data: list[dict]) -> tuple[list[set[str]], list[set[st
     return titles, scripts, images
 
 
+def _previous_trends(file_data: list[dict]) -> list[str]:
+    trends: list[str] = []
+    for item in file_data:
+        if not isinstance(item, dict):
+            continue
+        trend = item.get("trend")
+        if trend:
+            trends.append(str(trend))
+    return _clean_trend_list(trends, allow_numeric=False)
+
+
+def _previous_trend_tokens(file_data: list[dict]) -> list[set[str]]:
+    return [_token_set(t) for t in _previous_trends(file_data)]
+
+
 def _validate_no_repeats(data: dict, file_data: list[dict]) -> tuple[bool, str]:
     title = str(data.get("title") or "")
     script = data.get("script")
     images = data.get("image")
+    trend_value = str(data.get("trend") or "")
 
     if not isinstance(script, list) or not isinstance(images, list):
         return False, "script/image must be lists."
@@ -256,6 +304,13 @@ def _validate_no_repeats(data: dict, file_data: list[dict]) -> tuple[bool, str]:
         if _normalize(str(img)) in images_prev:
             return False, "Image prompt repeats a previous output."
 
+    trend_clean = _strip_trend_text(trend_value)
+    if trend_clean:
+        prev_trends = _previous_trends(file_data)
+        prev_trends_norm = {_normalize(t) for t in prev_trends}
+        if _normalize(trend_clean) in prev_trends_norm:
+            return False, "Trend topic already used in output.json."
+
     prev_title_tokens, prev_script_tokens, prev_image_tokens = _previous_tokens(file_data)
     if title:
         title_tokens = _token_set(title)
@@ -275,47 +330,53 @@ def _validate_no_repeats(data: dict, file_data: list[dict]) -> tuple[bool, str]:
             if _jaccard(tokens, prev) >= SIMILARITY_THRESHOLD:
                 return False, "Image prompt too similar to a previous output."
 
+    if trend_clean:
+        trend_tokens = _token_set(trend_clean)
+        for prev in _previous_trend_tokens(file_data):
+            if _jaccard(trend_tokens, prev) >= SIMILARITY_THRESHOLD:
+                return False, "Trend topic too similar to a previous output."
+
     return True, ""
 
 
 def _all_trends_used(trends: list[str], repeated: list[str]) -> bool:
-    trend_ids = {str(i) for i in range(1, len(trends) + 1)}
-    if not trend_ids:
+    trend_topics = _clean_trend_list(trends, allow_numeric=False)
+    if not trend_topics:
         return False
-    used = {str(t) for t in repeated if t is not None}
-    return trend_ids.issubset(used)
+    used = {_normalize(t) for t in _clean_trend_list(repeated, allow_numeric=False)}
+    return all(_normalize(t) in used for t in trend_topics)
 
 
 def _build_prompt(trends: list[str], repeated: list[str]) -> str:
-    all_used = _all_trends_used(trends, repeated)
-    trend_ids = {str(i) for i in range(1, len(trends) + 1)}
-    used = {str(t) for t in repeated if t is not None}
-    used_in_current = sorted([t for t in trend_ids if t in used], key=lambda x: int(x))
-    unused = sorted([t for t in trend_ids if t not in used], key=lambda x: int(x))
+    trend_topics = _clean_trend_list(trends, allow_numeric=False)
+    used_topics = _clean_trend_list(repeated, allow_numeric=False)
+    used_norm = {_normalize(t) for t in used_topics}
+    unused_topics = [t for t in trend_topics if _normalize(t) not in used_norm]
+    all_used = bool(trend_topics) and not unused_topics
     ignore_line = (
-        f"Do NOT choose these trend numbers from the list: {used_in_current}. " if used_in_current else ""
+        f"Do NOT choose these trend topics from the list: {used_topics}. " if used_topics else ""
     )
-    if not all_used and unused:
-        if len(unused) == 1:
-            pick_line = f"You MUST choose trend number {unused[0]} (the only unused option). "
+    if not all_used and unused_topics:
+        if len(unused_topics) == 1:
+            pick_line = f"You MUST choose this unused trend topic: \"{unused_topics[0]}\". "
         else:
-            pick_line = f"Choose ONLY from these unused trend numbers: {unused}. "
+            pick_line = f"Choose ONLY from these unused trend topics: {unused_topics}. "
     else:
         pick_line = ""
     trend_rule = (
-        f"Select the most popular REAL true crime case from this list of trends: {trends}. "
+        f"Select the most popular REAL true crime case from this list of trends: {trend_topics}. "
         if not all_used
         else (
-            f"All listed trend numbers are already used in output.json. "
-            f"Ignore the list {trends} and pick ANY real case NOT in output.json. "
-            "Set \"trend\" to \"0\"."
+            f"All listed trend topics are already used in output.json. "
+            f"Ignore the list {trend_topics} and pick ANY real case NOT in output.json. "
+            "Set \"trend\" to the exact case name you chose."
         )
     )
     return (
-        "You are a professional YouTuber specializing in TRUE CRIME so think harder emotion. "
+        "You are a professional YouTuber specializing in TRUE CRIME. "
         f"This is a YouTube Short: vertical 9:16, {int(MIN_TOTAL_SECONDS)}-{int(MAX_TOTAL_SECONDS)} seconds total. "
         f"{trend_rule}"
-        "You MUST select a real, well-documented true crime case ifamous or current (NO movies, NO TV shows, NO fiction, NO urban legends). "
+        "You MUST select a real, well-documented true crime case (NO movies, NO TV shows, NO fiction, NO urban legends). "
         "The case must be interesting but NOT graphic, violent, or disturbing. "
         "Use only safe, censored wording suitable for YouTube. "
         f"{ignore_line}"
@@ -324,13 +385,13 @@ def _build_prompt(trends: list[str], repeated: list[str]) -> str:
         "Return ONE valid JSON object ONLY (no extra text, no markdown, no code blocks, no commentary) with these fields: "
         "{\"title\": \"...\", \"script\": [\"scene 1 narration\", \"scene 2 narration\", \"...\"], "
         "\"image\": [\"scene 1 image prompt\", \"scene 2 image prompt\", \"...\"], "
-        "\"trend\": \"selected trend number only\", \"background_music\": \"Short music search query\"}. "
+        "\"trend\": \"selected trend topic text only\", \"background_music\": \"Short music search query\"}. "
         "STRICT RULES: "
-        "0. The first starting MUST be a strong hook with a genz and main points. "
+        "0. The first 5 seconds MUST be a strong hook with a sudden-stop beat. "
         "0b. Focus ONLY on the main story beats and important facts (NO filler, NO recap, NO speculation). "
         "Every line MUST add a new, concrete detail or turning point. "
         "Include ONLY the core facts: who, what, where, when, how. "
-        "1. script MUST be a list of narration scenes also more own sense connected day to day life and what if like that many hight niche. "
+        "1. script MUST be a list of narration scenes. "
         "2. image MUST be a list of image prompts. "
         "3. script and image lists MUST be the SAME LENGTH. "
         f"4. Each script item = 1-2 short sentences (tight pacing ~{int(SCENE_SECONDS)}s per clip). "
@@ -363,8 +424,9 @@ def _build_prompt(trends: list[str], repeated: list[str]) -> str:
         "17. Do NOT repeat any lines or image prompts within the output. "
         "18. Do NOT repeat or paraphrase titles, lines, or image prompts from earlier videos. "
         "19. Do NOT reuse or paraphrase the same phrasing from earlier videos. "
+        "19b. \"trend\" MUST be the exact topic text you chose (no numbers, no sources). "
         "20. If none of the provided trends are usable, pick ANY real murder case "
-        "that does NOT appear in output.json and set \"trend\" to \"0\". "
+        "that does NOT appear in output.json and set \"trend\" to the exact case name. "
         "21. Do NOT output any reasoning, analysis, or extra text outside JSON. "
         "22. If you start repeating or looping, STOP and return {} ONLY. "
         "23. background_music MUST be a SHORT search query (4-8 words), plain ASCII, "
@@ -436,7 +498,7 @@ def contents(trends):
     else:
         file_data = []
     if len(file_data) > 0:
-        repeated = [item["trend"] for item in file_data]
+        repeated = [str(item.get("trend") or "") for item in file_data]
 
     max_attempts = int(os.getenv("CONTENT_MAX_ATTEMPTS", "3"))
     prompt = _build_prompt(trends, repeated)

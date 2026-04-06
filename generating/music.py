@@ -129,13 +129,17 @@ def _resolve_cookies_source() -> tuple[str | None, tuple | None]:
     if cookies_file:
         return cookies_file, None
 
-    if os.getenv("YTDLP_COOKIES_AUTO", "1") == "1":
+    prefer_browser = os.getenv("YTDLP_COOKIES_AUTO_PREFER_BROWSER", "1") == "1"
+    auto_enabled = os.getenv("YTDLP_COOKIES_AUTO", "1") == "1"
+    default_cookie = PROJECT_ROOT / "cookies.txt"
+
+    detected = None
+    if auto_enabled:
         detected = _detect_browser_for_cookies()
         if detected:
             return None, (detected,)
 
-    default_cookie = PROJECT_ROOT / "cookies.txt"
-    if default_cookie.exists():
+    if default_cookie.exists() and (not prefer_browser or detected is None):
         return str(default_cookie), None
 
     return None, None

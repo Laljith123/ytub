@@ -23,6 +23,7 @@ FINAL_VIDEO_NAME = os.getenv("FINAL_VIDEO_NAME", "final.mp4")
 FINAL_VIDEO = OUTPUT_DIR / FINAL_VIDEO_NAME
 BACKGROUND_WAV = OUTPUT_DIR / "music" / "background.wav"
 BACKGROUND_VOLUME = float(os.getenv("BACKGROUND_MUSIC_VOLUME", "0.18"))
+REQUIRE_BACKGROUND_MUSIC = False
 
 DEFAULT_WIDTH = int(os.getenv("VIDEO_WIDTH", "1080"))
 DEFAULT_HEIGHT = int(os.getenv("VIDEO_HEIGHT", "1920"))
@@ -418,7 +419,9 @@ def main() -> None:
     if not audio_files:
         raise RuntimeError(f"No audio chunks found in {AUDIO_DIR}")
     if not BACKGROUND_WAV.exists():
-        raise RuntimeError(f"Background music wav not found: {BACKGROUND_WAV}")
+        if REQUIRE_BACKGROUND_MUSIC:
+            raise RuntimeError(f"Background music wav not found: {BACKGROUND_WAV}")
+        print(f"Background music wav not found: {BACKGROUND_WAV} (continuing without background music)")
 
     durations = [_ffprobe_duration(p) for p in audio_files]
     total_audio = sum(durations)

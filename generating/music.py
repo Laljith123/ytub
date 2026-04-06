@@ -70,11 +70,81 @@ def _is_url(value: str) -> bool:
     return value.startswith("http://") or value.startswith("https://")
 
 
+def _parse_cookies_from_browser(value: str) -> tuple[str, str] | tuple[str]:
+    parts = [p.strip() for p in value.split(":", 1)]
+    if len(parts) == 1:
+        return (parts[0],)
+    return (parts[0], parts[1])
+
+
+def _browser_installed(browser: str) -> bool:
+    exe_by_browser = {
+        "chrome": "chrome.exe",
+        "edge": "msedge.exe",
+        "brave": "brave.exe",
+        "firefox": "firefox.exe",
+    }
+    exe = exe_by_browser.get(browser, "")
+    if exe and shutil.which(exe):
+        return True
+    known_paths = {
+        "chrome": [
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        ],
+        "edge": [
+            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        ],
+        "brave": [
+            r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe",
+            r"C:\Program Files (x86)\BraveSoftware\Brave-Browser\Application\brave.exe",
+        ],
+        "firefox": [
+            r"C:\Program Files\Mozilla Firefox\firefox.exe",
+            r"C:\Program Files (x86)\Mozilla Firefox\firefox.exe",
+        ],
+    }
+    for path in known_paths.get(browser, []):
+        if Path(path).exists():
+            return True
+    return False
+
+
+def _detect_browser_for_cookies() -> str | None:
+    order = os.getenv("YTDLP_COOKIES_BROWSER_ORDER", "chrome,edge,brave,firefox")
+    candidates = [b.strip().lower() for b in order.split(",") if b.strip()]
+    for browser in candidates:
+        if _browser_installed(browser):
+            return browser
+    return None
+
+
+def _resolve_cookies_source() -> tuple[str | None, tuple | None]:
+    cookies_from_browser = os.getenv("YTDLP_COOKIES_FROM_BROWSER")
+    if cookies_from_browser:
+        return None, _parse_cookies_from_browser(cookies_from_browser.strip())
+
+    cookies_file = os.getenv("YTDLP_COOKIES")
+    if cookies_file:
+        return cookies_file, None
+
+    if os.getenv("YTDLP_COOKIES_AUTO", "1") == "1":
+        detected = _detect_browser_for_cookies()
+        if detected:
+            return None, (detected,)
+
+    default_cookie = PROJECT_ROOT / "cookies.txt"
+    if default_cookie.exists():
+        return str(default_cookie), None
+
+    return None, None
+
+
 def _download_audio(query: str, out_dir: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     target = query if _is_url(query) else f"ytsearch1:{query}"
-    cookies_file = os.getenv("YTDLP_COOKIES")
-    cookies_from_browser = os.getenv("YTDLP_COOKIES_FROM_BROWSER")
+    cookies_file, cookies_from_browser = _resolve_cookies_source()
     js_runtime = os.getenv("YTDLP_JS_RUNTIME")
     remote_components = os.getenv("YTDLP_REMOTE_COMPONENTS")
     default_client = "web" if (cookies_file or cookies_from_browser) else "android"
@@ -104,13 +174,7 @@ def _download_audio(query: str, out_dir: Path) -> Path:
     if cookies_file:
         ydl_opts["cookiefile"] = cookies_file
     if cookies_from_browser:
-        value = cookies_from_browser.strip()
-        if value:
-            parts = [p.strip() for p in value.split(":", 1)]
-            if len(parts) == 1:
-                ydl_opts["cookiesfrombrowser"] = (parts[0],)
-            else:
-                ydl_opts["cookiesfrombrowser"] = (parts[0], parts[1])
+        ydl_opts["cookiesfrombrowser"] = cookies_from_browser
     if js_runtime:
         ydl_opts["js_runtimes"] = {js_runtime: {}}
     if remote_components:

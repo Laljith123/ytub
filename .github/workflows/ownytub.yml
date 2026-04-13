@@ -79,7 +79,7 @@ jobs:
         shell: pwsh
         run: |
           $min = 1
-          $max = 5
+          $max = 2
           $random = Get-Random -Minimum $min -Maximum ($max + 1)
           echo "RUN_PIPELINE=1" >> $env:GITHUB_ENV
           echo "GENERATE_COUNT=$random" >> $env:GITHUB_ENV
@@ -90,8 +90,8 @@ jobs:
         if: env.RUN_PIPELINE == '1'
         shell: pwsh
         run: |
-          $min = 2
-          $max = 5
+          $min = 1
+          $max = 2
           $random = Get-Random -Minimum $min -Maximum ($max + 1)
 
           echo "YOUTUBE_UPLOADS_PER_DAY=$random" >> $env:GITHUB_ENV

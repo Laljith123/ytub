@@ -1,6 +1,6 @@
 import json
 import os
-import random
+import re
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -9,10 +9,11 @@ from typing import List, Tuple
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
-
+from openai import OpenAI
 
 ROOT = Path(__file__).resolve().parent
 OUTPUT_DIR = ROOT / "output"
@@ -52,19 +53,97 @@ NON_INTERACTIVE = os.getenv("NON_INTERACTIVE", "").lower() in {"1", "true", "yes
 CLIENT_SECRETS_JSON = os.getenv("YOUTUBE_CLIENT_SECRETS_JSON", "")
 TOKEN_JSON = os.getenv("YOUTUBE_TOKEN_JSON", "")
 
-YOUTUBE_TITLE_LIMIT = 100
+_nvidia_client = None
+if os.getenv("NVIDIA_API_KEY"):
+    _nvidia_client = OpenAI(
+        base_url="https://integrate.api.nvidia.com/v1",
+        api_key=os.getenv("NVIDIA_API_KEY"),
+    )
 
+def generate_hashtags(title: str, description: str, max_retries: int = 3) -> tuple[str, str]:
+    if _nvidia_client is None:
+        print("[Hashtags] NVIDIA_API_KEY not set — using default hashtags.")
+        return POPULAR_HASHTAGS, ""
 
-def _build_title_with_hashtags(base_title: str) -> str:
-    all_tags = [t for t in POPULAR_HASHTAGS.split() if t.startswith("#")]
-    random.shuffle(all_tags)
-    result = base_title
-    for tag in all_tags:
-        candidate = result + " " + tag
-        if len(candidate) <= YOUTUBE_TITLE_LIMIT:
-            result = candidate
-    return result.strip()
+    prompt = (
+        f"You are a YouTube SEO expert. A video has this title and description:\n\n"
+        f"TITLE: {title}\n\n"
+        f"DESCRIPTION: {description[:500]}\n\n"
+        f"Generate exactly 15 trending YouTube hashtags that best fit this content.\n\n"
+        f"STRICT FORMAT RULES:\n"
+        f"- Output ONLY a single line of space-separated hashtags\n"
+        f"- Every hashtag MUST start with #\n"
+        f"- No numbers, bullets, explanations, or extra lines\n"
+        f"- No spaces inside hashtags (use camelCase)\n\n"
+        f"Example output:\n"
+        f"#shorts #viral #truecrime #mystery #coldcase #crime #documentary "
+        f"#unsolved #investigation #trending #ytshorts #youtubeshorts #casefile "
+        f"#missingperson #shortsvideo"
+    )
 
+    reasoning_captured = ""
+    last_error = None
+
+    for attempt in range(1, max_retries + 1):
+        print(f"\n[Hashtags] Attempt {attempt}/{max_retries} ...")
+        reasoning_parts: list[str] = []
+        content_parts: list[str] = []
+
+        try:
+            completion = _nvidia_client.chat.completions.create(
+                model="nvidia/nemotron-super-49b-v1",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=1,
+                top_p=0.95,
+                max_tokens=512,
+                extra_body={
+                    "chat_template_kwargs": {"enable_thinking": True},
+                    "reasoning_budget": 2048,
+                },
+                stream=True,
+            )
+
+            for chunk in completion:
+                if not chunk.choices:
+                    continue
+                reasoning = getattr(chunk.choices[0].delta, "reasoning_content", None)
+                if reasoning:
+                    reasoning_parts.append(reasoning)
+                    print(reasoning, end="", flush=True)
+                if chunk.choices[0].delta.content is not None:
+                    content_parts.append(chunk.choices[0].delta.content)
+
+            reasoning_captured = "".join(reasoning_parts)
+            raw_output = "".join(content_parts).strip()
+            print(f"\n[Hashtags] Raw output: {raw_output}")
+
+            hashtags = re.findall(r"#\w+", raw_output)
+
+            if not hashtags:
+                raise ValueError(f"No hashtags found in output: '{raw_output}'")
+            if len(hashtags) < 5:
+                raise ValueError(
+                    f"Too few hashtags ({len(hashtags)}), expected at least 5. Got: {hashtags}"
+                )
+
+            hashtag_string = " ".join(hashtags)
+            print(f"[Hashtags] ✅ {hashtag_string}")
+            return hashtag_string, reasoning_captured
+
+        except ValueError as exc:
+            last_error = exc
+            print(f"\n[Hashtags] ⚠️  Format error on attempt {attempt}: {exc}")
+            if attempt < max_retries:
+                print("[Hashtags] Retrying...")
+
+        except Exception as exc:
+            last_error = exc
+            print(f"\n[Hashtags] ❌ API error on attempt {attempt}: {exc}")
+            if attempt < max_retries:
+                print("[Hashtags] Retrying...")
+
+    print(f"[Hashtags] All {max_retries} attempts failed ({last_error}). Using defaults.")
+    return POPULAR_HASHTAGS, reasoning_captured
 
 def _write_json_env(payload: str, path: Path, label: str) -> None:
     if not payload:
@@ -76,7 +155,6 @@ def _write_json_env(payload: str, path: Path, label: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data), encoding="utf-8")
 
-
 def _load_credentials():
     if TOKEN_JSON:
         try:
@@ -84,17 +162,38 @@ def _load_credentials():
         except json.JSONDecodeError as exc:
             raise RuntimeError("YOUTUBE_TOKEN_JSON is not valid JSON.") from exc
         return Credentials.from_authorized_user_info(data, SCOPES)
-
     if TOKEN_FILE.exists():
         return Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
-
     return None
 
+def _run_oauth_flow() -> Credentials:
+    if not CLIENT_SECRETS.exists():
+        raise RuntimeError(
+            f"Missing client secrets at {CLIENT_SECRETS}. "
+            "Create OAuth client credentials in Google Cloud Console."
+        )
+    flow = InstalledAppFlow.from_client_secrets_file(str(CLIENT_SECRETS), SCOPES)
+    # Force an offline consent so Google returns a refresh token we can reuse.
+    return flow.run_local_server(port=0, access_type="offline", prompt="consent")
+
+def _refresh_credentials(creds: Credentials) -> Credentials:
+    try:
+        creds.refresh(Request())
+        return creds
+    except RefreshError as exc:
+        if NON_INTERACTIVE:
+            raise RuntimeError(
+                "Google rejected the stored YouTube refresh token in CI "
+                "(invalid_grant: expired or revoked). Set the OAuth consent screen "
+                "to In production, generate a new refresh token locally, and update "
+                "the GitHub secret YOUTUBE_TOKEN_JSON."
+            ) from exc
+        print("Stored YouTube refresh token was rejected. Opening the browser to re-authorize...")
+        return _run_oauth_flow()
 
 def _get_service():
     if CLIENT_SECRETS_JSON and not CLIENT_SECRETS.exists():
         _write_json_env(CLIENT_SECRETS_JSON, CLIENT_SECRETS, "YOUTUBE_CLIENT_SECRETS_JSON")
-
     creds = _load_credentials()
     if not creds:
         if NON_INTERACTIVE:
@@ -102,30 +201,20 @@ def _get_service():
                 "Missing OAuth credentials. Provide YOUTUBE_TOKEN_JSON (preferred) or "
                 "mount YOUTUBE_TOKEN_FILE in GitHub Actions."
             )
-        if not CLIENT_SECRETS.exists():
-            raise RuntimeError(
-                f"Missing client secrets at {CLIENT_SECRETS}. "
-                "Create OAuth client credentials in Google Cloud Console."
-            )
-        flow = InstalledAppFlow.from_client_secrets_file(str(CLIENT_SECRETS), SCOPES)
-        creds = flow.run_local_server(port=0)
-
+        creds = _run_oauth_flow()
     if not creds.valid:
         if creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+            creds = _refresh_credentials(creds)
         else:
             if NON_INTERACTIVE:
                 raise RuntimeError(
                     "OAuth credentials are invalid/expired and cannot be refreshed in CI. "
                     "Recreate a refresh token and set YOUTUBE_TOKEN_JSON."
                 )
-            flow = InstalledAppFlow.from_client_secrets_file(str(CLIENT_SECRETS), SCOPES)
-            creds = flow.run_local_server(port=0)
-
+            creds = _run_oauth_flow()
     TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
     TOKEN_FILE.write_text(creds.to_json())
     return build("youtube", "v3", credentials=creds)
-
 
 def _load_defaults() -> Tuple[str, str]:
     title = "Untitled Short"
@@ -156,13 +245,11 @@ def _load_defaults() -> Tuple[str, str]:
         description = f"{description}\n\n{REFERENCE_TEXT}"
     return title, description
 
-
 def _prompt_text(label: str, default: str) -> str:
     if NON_INTERACTIVE:
         return default
     value = input(f"{label} [{default}]: ").strip()
     return value or default
-
 
 def _list_videos() -> List[Path]:
     videos: List[Path] = []
@@ -174,7 +261,6 @@ def _list_videos() -> List[Path]:
         raise RuntimeError("No videos found to upload.")
     return videos
 
-
 def _make_title(base: str, index: int, total: int) -> str:
     if "{n}" in base:
         return base.format(n=index + 1)
@@ -182,12 +268,10 @@ def _make_title(base: str, index: int, total: int) -> str:
         return f"{base} #{index + 1}"
     return base
 
-
 def _upload_video(youtube, video_path: Path, title: str, description: str) -> str:
-    title_with_tags = _build_title_with_hashtags(title)
     body = {
         "snippet": {
-            "title": title_with_tags,
+            "title": title,
             "description": description,
             "tags": [t.strip() for t in DEFAULT_TAGS if t.strip()],
             "categoryId": CATEGORY_ID,
@@ -204,7 +288,6 @@ def _upload_video(youtube, video_path: Path, title: str, description: str) -> st
     video_id = response.get("id")
     print(f"Uploaded: {video_id}")
     return video_id
-
 
 def _upload_thumbnail(youtube, video_id: str, thumbnail: Path) -> None:
     if not thumbnail.exists():
@@ -232,7 +315,6 @@ def _upload_thumbnail(youtube, video_id: str, thumbnail: Path) -> None:
                 return
             raise
 
-
 def _pick_thumbnail_for_video(video_path: Path) -> Path:
     candidate = video_path.with_suffix(".jpg")
     if candidate.exists():
@@ -244,7 +326,6 @@ def _pick_thumbnail_for_video(video_path: Path) -> Path:
     if candidate.exists():
         return candidate
     return THUMBNAIL_PATH
-
 
 def main() -> None:
     youtube = _get_service()
@@ -259,6 +340,12 @@ def main() -> None:
         base_title = _prompt_text("Title", default_title)
     if not base_description:
         base_description = _prompt_text("Description", default_description)
+
+    generated_hashtags, _reasoning = generate_hashtags(base_title, base_description)
+    if generated_hashtags != POPULAR_HASHTAGS:
+        base_description = base_description.replace(POPULAR_HASHTAGS, generated_hashtags)
+        if generated_hashtags not in base_description:
+            base_description = f"{base_description}\n\n{generated_hashtags}"
 
     total_uploads = UPLOADS_PER_DAY if LOOP_UPLOADS else min(UPLOADS_PER_DAY, len(videos))
     if MAX_SUCCESS_UPLOADS > 0:
@@ -288,7 +375,6 @@ def main() -> None:
 
     elapsed = datetime.now() - start
     print(f"Done. Uploaded {total_uploads} videos in {elapsed}.")
-
 
 if __name__ == "__main__":
     main()

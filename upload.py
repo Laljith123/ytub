@@ -20,10 +20,10 @@ ROOT = Path(__file__).resolve().parent
 OUTPUT_DIR = ROOT / "output"
 OUTPUT_JSON = ROOT / "output.json"
 
-SCOPES = [
-    "https://www.googleapis.com/auth/youtube.upload",
-    "https://www.googleapis.com/auth/youtube.readonly",
-]
+UPLOAD_SCOPE = "https://www.googleapis.com/auth/youtube.upload"
+HISTORY_SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
+UPLOAD_SCOPES = [UPLOAD_SCOPE]
+HISTORY_SCOPES = [UPLOAD_SCOPE, HISTORY_SCOPE]
 
 CLIENT_SECRETS = Path(os.getenv("YOUTUBE_CLIENT_SECRETS", "client_secrets.json"))
 TOKEN_FILE = Path(os.getenv("YOUTUBE_TOKEN_FILE", str(OUTPUT_DIR / "youtube_token.json")))
@@ -166,53 +166,157 @@ def _write_json_env(payload: str, path: Path, label: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data), encoding="utf-8")
 
-def _load_credentials():
+
+def _normalize_scopes(raw_scopes) -> list[str]:
+    if raw_scopes is None:
+        return []
+    if isinstance(raw_scopes, str):
+        raw_scopes = raw_scopes.split()
+
+    scopes: list[str] = []
+    seen: set[str] = set()
+    for scope in raw_scopes:
+        value = str(scope).strip()
+        if not value or value in seen:
+            continue
+        scopes.append(value)
+        seen.add(value)
+    return scopes
+
+
+def _load_token_data() -> dict | None:
     if TOKEN_JSON:
         try:
-            data = json.loads(TOKEN_JSON)
+            return json.loads(TOKEN_JSON)
         except json.JSONDecodeError as exc:
             raise RuntimeError("YOUTUBE_TOKEN_JSON is not valid JSON.") from exc
-        return Credentials.from_authorized_user_info(data, SCOPES)
     if TOKEN_FILE.exists():
-        return Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
+        try:
+            return json.loads(TOKEN_FILE.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Stored OAuth token at {TOKEN_FILE} is not valid JSON.") from exc
     return None
 
-def _run_oauth_flow() -> Credentials:
+
+def _load_credentials():
+    data = _load_token_data()
+    if data is None:
+        return None
+    scopes = _normalize_scopes(data.get("scopes"))
+    return Credentials.from_authorized_user_info(data, scopes or None)
+
+
+def _credential_scopes(creds: Credentials) -> list[str]:
+    return _normalize_scopes(creds.scopes)
+
+
+def _missing_scopes(creds: Credentials, required_scopes: list[str]) -> list[str]:
+    granted = set(_credential_scopes(creds))
+    return [scope for scope in required_scopes if scope not in granted]
+
+
+def _save_credentials(creds: Credentials) -> None:
+    TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+    TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
+
+
+def _run_oauth_flow(scopes: list[str] | None = None) -> Credentials:
+    requested_scopes = _normalize_scopes(scopes) or list(UPLOAD_SCOPES)
     if not CLIENT_SECRETS.exists():
         raise RuntimeError(
             f"Missing client secrets at {CLIENT_SECRETS}. "
             "Create OAuth client credentials in Google Cloud Console."
         )
-    flow = InstalledAppFlow.from_client_secrets_file(str(CLIENT_SECRETS), SCOPES)
+    flow = InstalledAppFlow.from_client_secrets_file(str(CLIENT_SECRETS), requested_scopes)
     # Force an offline consent so Google returns a refresh token we can reuse.
     return flow.run_local_server(port=0, access_type="offline", prompt="consent")
+
+
+def _refresh_error_details(exc: RefreshError) -> tuple[str, str]:
+    error = ""
+    description = ""
+    for arg in exc.args:
+        if isinstance(arg, dict):
+            error = str(arg.get("error") or error)
+            description = str(arg.get("error_description") or description)
+        elif isinstance(arg, str) and not description:
+            description = arg
+    return error, description or str(exc)
+
 
 def _refresh_credentials(creds: Credentials) -> Credentials:
     try:
         creds.refresh(Request())
         return creds
     except RefreshError as exc:
+        error, description = _refresh_error_details(exc)
         if NON_INTERACTIVE:
+            if error == "invalid_scope":
+                raise RuntimeError(
+                    "Google rejected the stored YouTube refresh token in CI because it does not "
+                    "include the requested OAuth scope. Existing upload-only tokens can still be "
+                    "used for uploads, but channel history requires a new token. Run "
+                    "`python generate_youtube_token.py --history` locally and update the GitHub "
+                    "secret YOUTUBE_TOKEN_JSON to enable history checks."
+                ) from exc
+            if error == "invalid_grant":
+                raise RuntimeError(
+                    "Google rejected the stored YouTube refresh token in CI "
+                    "(invalid_grant: expired or revoked). Set the OAuth consent screen "
+                    "to In production, generate a new refresh token locally, and update "
+                    "the GitHub secret YOUTUBE_TOKEN_JSON."
+                ) from exc
             raise RuntimeError(
-                "Google rejected the stored YouTube refresh token in CI "
-                "(invalid_grant: expired or revoked). Set the OAuth consent screen "
-                "to In production, generate a new refresh token locally, and update "
-                "the GitHub secret YOUTUBE_TOKEN_JSON."
+                f"Google rejected the stored YouTube refresh token in CI ({error or 'refresh_error'}: "
+                f"{description})."
             ) from exc
         print("Stored YouTube refresh token was rejected. Opening the browser to re-authorize...")
-        return _run_oauth_flow()
+        return _run_oauth_flow(_credential_scopes(creds) or list(UPLOAD_SCOPES))
 
-def _get_service():
+
+def _require_scopes(creds: Credentials, required_scopes: list[str]) -> None:
+    missing = _missing_scopes(creds, required_scopes)
+    if not missing:
+        return
+
+    if UPLOAD_SCOPE in missing:
+        raise RuntimeError(
+            "The stored YouTube OAuth token does not include youtube.upload. "
+            "Generate a fresh upload token and update YOUTUBE_TOKEN_JSON."
+        )
+
+    if HISTORY_SCOPE in missing:
+        raise RuntimeError(
+            "The stored YouTube OAuth token does not include youtube.readonly. "
+            "Run `python generate_youtube_token.py --history` and update YOUTUBE_TOKEN_JSON "
+            "to enable channel history checks."
+        )
+
+    raise RuntimeError(f"The stored YouTube OAuth token is missing required scopes: {missing}")
+
+
+def _get_service(
+    requested_scopes: list[str] | None = None,
+    *,
+    force_reauth: bool = False,
+):
+    required_scopes = _normalize_scopes(requested_scopes) or list(UPLOAD_SCOPES)
     if CLIENT_SECRETS_JSON and not CLIENT_SECRETS.exists():
         _write_json_env(CLIENT_SECRETS_JSON, CLIENT_SECRETS, "YOUTUBE_CLIENT_SECRETS_JSON")
-    creds = _load_credentials()
+    creds = None if force_reauth else _load_credentials()
     if not creds:
         if NON_INTERACTIVE:
             raise RuntimeError(
                 "Missing OAuth credentials. Provide YOUTUBE_TOKEN_JSON (preferred) or "
                 "mount YOUTUBE_TOKEN_FILE in GitHub Actions."
             )
-        creds = _run_oauth_flow()
+        creds = _run_oauth_flow(required_scopes)
+    else:
+        missing = _missing_scopes(creds, required_scopes)
+        if missing:
+            if NON_INTERACTIVE:
+                _require_scopes(creds, required_scopes)
+            creds = _run_oauth_flow(required_scopes)
     if not creds.valid:
         if creds.expired and creds.refresh_token:
             creds = _refresh_credentials(creds)
@@ -222,9 +326,9 @@ def _get_service():
                     "OAuth credentials are invalid/expired and cannot be refreshed in CI. "
                     "Recreate a refresh token and set YOUTUBE_TOKEN_JSON."
                 )
-            creds = _run_oauth_flow()
-    TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-    TOKEN_FILE.write_text(creds.to_json())
+            creds = _run_oauth_flow(required_scopes)
+    _require_scopes(creds, required_scopes)
+    _save_credentials(creds)
     return build("youtube", "v3", credentials=creds)
 
 def _load_defaults() -> Tuple[str, str]:

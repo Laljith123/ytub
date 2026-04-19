@@ -79,7 +79,7 @@ jobs:
         shell: pwsh
         run: |
           $min = 1
-          $max = 2
+          $max = 5
           $random = Get-Random -Minimum $min -Maximum ($max + 1)
           echo "RUN_PIPELINE=1" >> $env:GITHUB_ENV
           echo "GENERATE_COUNT=$random" >> $env:GITHUB_ENV
@@ -90,8 +90,8 @@ jobs:
         if: env.RUN_PIPELINE == '1'
         shell: pwsh
         run: |
-          $min = 1
-          $max = 2
+          $min = 2
+          $max = 5
           $random = Get-Random -Minimum $min -Maximum ($max + 1)
 
           echo "YOUTUBE_UPLOADS_PER_DAY=$random" >> $env:GITHUB_ENV
@@ -104,6 +104,10 @@ jobs:
         env:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN_JSON }}
+          YOUTUBE_CHANNEL_ID: ${{ vars.YOUTUBE_CHANNEL_ID }}
+          YOUTUBE_HISTORY_ENABLED: "1"
+          YOUTUBE_HISTORY_LIMIT: "200"
+          YOUTUBE_HISTORY_PROMPT_LIMIT: "40"
           UPLOAD_QUEUE_DIR: ${{ github.workspace }}\output\queue
           THUMBNAIL_PATH: ${{ github.workspace }}\output\thumbnail.jpg
           YOUTUBE_TOKEN_FILE: ${{ github.workspace }}\output\youtube_token.json

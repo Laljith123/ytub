@@ -38,10 +38,9 @@ SIMILARITY_THRESHOLD = float(os.getenv("CONTENT_DUP_SIM", "0.82"))
 MAX_OUTPUT_CHARS = int(os.getenv("CONTENT_MAX_OUTPUT_CHARS", "8000"))
 MAX_NGRAM_REPEAT = int(os.getenv("CONTENT_MAX_NGRAM_REPEAT", "20"))
 FALLBACK_MAX_TOKENS = int(os.getenv("CONTENT_FALLBACK_MAX_TOKENS", "4096"))
-YOUTUBE_HISTORY_SCOPES = [
-    "https://www.googleapis.com/auth/youtube.readonly",
-    "https://www.googleapis.com/auth/youtube.upload",
-]
+YOUTUBE_UPLOAD_SCOPE = "https://www.googleapis.com/auth/youtube.upload"
+YOUTUBE_HISTORY_SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
+YOUTUBE_HISTORY_REQUIRED_SCOPES = [YOUTUBE_UPLOAD_SCOPE, YOUTUBE_HISTORY_SCOPE]
 CONCEPT_STOPWORDS = {
     "the",
     "and",
@@ -85,6 +84,7 @@ CONCEPT_STOPWORDS = {
     "disturbing",
     "shocking",
 }
+_history_skip_logged = False
 
 
 def _extract_json_object(text: str) -> str | None:
@@ -192,6 +192,14 @@ def _normalize(text: str) -> str:
     return text
 
 
+def _log_history_skip(message: str) -> None:
+    global _history_skip_logged
+    if _history_skip_logged:
+        return
+    print(message)
+    _history_skip_logged = True
+
+
 def _youtube_history_enabled() -> bool:
     return os.getenv("YOUTUBE_HISTORY_ENABLED", "1") == "1"
 
@@ -210,6 +218,23 @@ def _youtube_history_title_similarity() -> float:
 
 def _youtube_history_concept_similarity() -> float:
     return float(os.getenv("YOUTUBE_HISTORY_CONCEPT_SIM", "0.55"))
+
+
+def _normalize_scopes(raw_scopes) -> list[str]:
+    if raw_scopes is None:
+        return []
+    if isinstance(raw_scopes, str):
+        raw_scopes = raw_scopes.split()
+
+    scopes: list[str] = []
+    seen: set[str] = set()
+    for scope in raw_scopes:
+        value = str(scope).strip()
+        if not value or value in seen:
+            continue
+        scopes.append(value)
+        seen.add(value)
+    return scopes
 
 
 def _history_token_paths() -> list[Path]:
@@ -234,33 +259,57 @@ def _history_token_paths() -> list[Path]:
     return deduped
 
 
-def _load_history_credentials() -> Credentials | None:
+def _load_history_token_info(data: dict) -> tuple[Credentials, list[str]]:
+    scopes = _normalize_scopes(data.get("scopes"))
+    creds = Credentials.from_authorized_user_info(data, scopes or None)
+    return creds, scopes
+
+
+def _load_history_credentials() -> tuple[Credentials | None, list[str], str | None]:
+    issues: list[str] = []
     token_json = os.getenv("YOUTUBE_TOKEN_JSON", "").strip()
     if token_json:
         try:
             data = json.loads(token_json)
         except json.JSONDecodeError:
-            print("Channel history skipped: YOUTUBE_TOKEN_JSON is not valid JSON.")
+            issues.append("YOUTUBE_TOKEN_JSON is not valid JSON.")
         else:
-            return Credentials.from_authorized_user_info(data, YOUTUBE_HISTORY_SCOPES)
+            creds, scopes = _load_history_token_info(data)
+            return creds, scopes, None
 
     for path in _history_token_paths():
         if not path.exists():
             continue
         try:
-            return Credentials.from_authorized_user_file(str(path), YOUTUBE_HISTORY_SCOPES)
+            data = json.loads(path.read_text(encoding="utf-8"))
+            creds, scopes = _load_history_token_info(data)
+            return creds, scopes, None
+        except json.JSONDecodeError as exc:
+            issues.append(f"token file {path} is not valid JSON: {exc}")
         except Exception as exc:
-            print(f"Channel history skipped: unable to read token file {path}: {exc}")
-    return None
+            issues.append(f"unable to read token file {path}: {exc}")
+    return None, [], issues[-1] if issues else None
 
 
 def _build_history_service():
     if not _youtube_history_enabled():
         return None
 
-    creds = _load_history_credentials()
+    creds, granted_scopes, error_message = _load_history_credentials()
     if creds is None:
-        print("Channel history skipped: no YouTube OAuth token found.")
+        if error_message:
+            _log_history_skip(f"Channel history skipped: {error_message}")
+        else:
+            _log_history_skip("Channel history skipped: no YouTube OAuth token found.")
+        return None
+
+    scope_set = set(granted_scopes)
+    if not all(scope in scope_set for scope in YOUTUBE_HISTORY_REQUIRED_SCOPES):
+        _log_history_skip(
+            "Channel history skipped: token only has upload scope. Run "
+            "`python generate_youtube_token.py --history` and update YOUTUBE_TOKEN_JSON "
+            "to enable channel history checks."
+        )
         return None
 
     if not creds.valid:
@@ -268,10 +317,10 @@ def _build_history_service():
             try:
                 creds.refresh(Request())
             except Exception as exc:
-                print(f"Channel history skipped: token refresh failed: {exc}")
+                _log_history_skip(f"Channel history skipped: token refresh failed: {exc}")
                 return None
         else:
-            print("Channel history skipped: OAuth token is invalid and cannot be refreshed.")
+            _log_history_skip("Channel history skipped: OAuth token is invalid and cannot be refreshed.")
             return None
 
     return build("youtube", "v3", credentials=creds, cache_discovery=False)
@@ -287,25 +336,25 @@ def _resolve_uploads_playlist_id(youtube) -> str:
     except HttpError as exc:
         status = exc.resp.status if exc.resp is not None else None
         if status == 403 and not channel_id:
-            print(
+            _log_history_skip(
                 "Channel history skipped: token cannot read your channel metadata. "
                 "Regenerate the token with generate_youtube_token.py after adding "
-                "youtube.readonly scope, or set YOUTUBE_CHANNEL_ID as a fallback."
+                "youtube.readonly scope."
             )
             return ""
-        print(f"Channel history skipped: failed to load channel metadata ({exc}).")
+        _log_history_skip(f"Channel history skipped: failed to load channel metadata ({exc}).")
         return ""
 
     items = response.get("items") or []
     if not items:
-        print("Channel history skipped: channel metadata returned no items.")
+        _log_history_skip("Channel history skipped: channel metadata returned no items.")
         return ""
 
     content_details = items[0].get("contentDetails") or {}
     related = content_details.get("relatedPlaylists") or {}
     uploads = str(related.get("uploads") or "").strip()
     if not uploads:
-        print("Channel history skipped: uploads playlist was not found.")
+        _log_history_skip("Channel history skipped: uploads playlist was not found.")
     return uploads
 
 

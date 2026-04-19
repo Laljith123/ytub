@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -19,7 +20,10 @@ ROOT = Path(__file__).resolve().parent
 OUTPUT_DIR = ROOT / "output"
 OUTPUT_JSON = ROOT / "output.json"
 
-SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+SCOPES = [
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube.readonly",
+]
 
 CLIENT_SECRETS = Path(os.getenv("YOUTUBE_CLIENT_SECRETS", "client_secrets.json"))
 TOKEN_FILE = Path(os.getenv("YOUTUBE_TOKEN_FILE", str(OUTPUT_DIR / "youtube_token.json")))
@@ -60,9 +64,16 @@ if os.getenv("NVIDIA_API_KEY"):
         api_key=os.getenv("NVIDIA_API_KEY"),
     )
 
+
+def _safe_log_text(value: object) -> str:
+    text = str(value)
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    return text.encode(encoding, errors="replace").decode(encoding, errors="replace")
+
+
 def generate_hashtags(title: str, description: str, max_retries: int = 3) -> tuple[str, str]:
     if _nvidia_client is None:
-        print("[Hashtags] NVIDIA_API_KEY not set — using default hashtags.")
+        print("[Hashtags] NVIDIA_API_KEY not set - using default hashtags.")
         return POPULAR_HASHTAGS, ""
 
     prompt = (
@@ -109,13 +120,13 @@ def generate_hashtags(title: str, description: str, max_retries: int = 3) -> tup
                 reasoning = getattr(chunk.choices[0].delta, "reasoning_content", None)
                 if reasoning:
                     reasoning_parts.append(reasoning)
-                    print(reasoning, end="", flush=True)
+                    print(_safe_log_text(reasoning), end="", flush=True)
                 if chunk.choices[0].delta.content is not None:
                     content_parts.append(chunk.choices[0].delta.content)
 
             reasoning_captured = "".join(reasoning_parts)
             raw_output = "".join(content_parts).strip()
-            print(f"\n[Hashtags] Raw output: {raw_output}")
+            print(_safe_log_text(f"\n[Hashtags] Raw output: {raw_output}"))
 
             hashtags = re.findall(r"#\w+", raw_output)
 
@@ -127,18 +138,18 @@ def generate_hashtags(title: str, description: str, max_retries: int = 3) -> tup
                 )
 
             hashtag_string = " ".join(hashtags)
-            print(f"[Hashtags] ✅ {hashtag_string}")
+            print(_safe_log_text(f"[Hashtags] OK {hashtag_string}"))
             return hashtag_string, reasoning_captured
 
         except ValueError as exc:
             last_error = exc
-            print(f"\n[Hashtags] ⚠️  Format error on attempt {attempt}: {exc}")
+            print(_safe_log_text(f"\n[Hashtags] Format error on attempt {attempt}: {exc}"))
             if attempt < max_retries:
                 print("[Hashtags] Retrying...")
 
         except Exception as exc:
             last_error = exc
-            print(f"\n[Hashtags] ❌ API error on attempt {attempt}: {exc}")
+            print(_safe_log_text(f"\n[Hashtags] API error on attempt {attempt}: {exc}"))
             if attempt < max_retries:
                 print("[Hashtags] Retrying...")
 

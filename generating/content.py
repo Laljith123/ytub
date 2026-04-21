@@ -718,7 +718,7 @@ def _build_prompt(trends: list[str], repeated: list[str], channel_titles: list[s
         "You are a professional YouTuber specializing in TRUE CRIME. "
         f"This is a YouTube Short: vertical 9:16, {int(MIN_TOTAL_SECONDS)}-{int(MAX_TOTAL_SECONDS)} seconds total. "
         f"{trend_rule}"
-        "You MUST select a real, well-documented true crime case (NO movies, NO TV shows, NO fiction, NO urban legends). "
+        "You MUST select a real, well-documented true crime case (NO movies, NO TV shows, NO fiction, NO urban legends). it should connect todays also"
         "The case must be interesting but NOT graphic, violent, or disturbing. "
         "Use only safe, censored wording suitable for YouTube. "
         f"{ignore_line}"

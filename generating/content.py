@@ -12,7 +12,7 @@ from googleapiclient.errors import HttpError
 from openai import OpenAI
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_JSON = PROJECT_ROOT / "output.json"
 CLIP_SECONDS = float(os.getenv("VIDEO_CLIP_SECONDS", "5"))
 VIDEO_MIN_SECONDS = int(os.getenv("VIDEO_MIN_SECONDS", "40"))
@@ -196,7 +196,7 @@ def _log_history_skip(message: str) -> None:
     global _history_skip_logged
     if _history_skip_logged:
         return
-    print(message.encode("ascii", "ignore").decode())
+    print(message)
     _history_skip_logged = True
 
 
@@ -359,41 +359,46 @@ def _resolve_uploads_playlist_id(youtube) -> str:
 
 
 def _fetch_channel_titles() -> list[str]:
-    """
-    Load titles from local history.json instead of YouTube API.
-    Works in GitHub Actions runtime.
-    """
-    history_file = Path(__file__).resolve().parent / "history.json"
-
-    if not history_file.exists():
-        _log_history_skip("⚠️ history.json not found, skipping history check.")
+    youtube = _build_history_service()
+    if youtube is None:
         return []
 
-    try:
-        with open(history_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
+    uploads_playlist_id = _resolve_uploads_playlist_id(youtube)
+    if not uploads_playlist_id:
+        return []
 
-        titles = []
-        seen = set()
+    titles: list[str] = []
+    seen: set[str] = set()
+    next_page_token = None
+    remaining = _youtube_history_limit()
 
-        for item in data:
-            title = str(item.get("title") or "").strip()
-            if not title:
+    while remaining > 0:
+        response = youtube.playlistItems().list(
+            part="snippet",
+            playlistId=uploads_playlist_id,
+            maxResults=min(50, remaining),
+            pageToken=next_page_token,
+        ).execute()
+
+        for item in response.get("items", []):
+            snippet = item.get("snippet") or {}
+            title = str(snippet.get("title") or "").strip()
+            if not title or title in {"Deleted video", "Private video"}:
                 continue
-
             norm = _normalize(title)
-            if norm in seen:
+            if not norm or norm in seen:
                 continue
-
             titles.append(title)
             seen.add(norm)
+            remaining -= 1
+            if remaining <= 0:
+                break
 
-        print(f"📂 Loaded {len(titles)} titles from history.json")
-        return titles
+        next_page_token = response.get("nextPageToken")
+        if not next_page_token:
+            break
 
-    except Exception as e:
-        _log_history_skip(f"⚠️ Failed to read history.json: {e}")
-        return []
+    return titles
 
 
 def _strip_trend_text(text: str) -> str:
@@ -713,7 +718,7 @@ def _build_prompt(trends: list[str], repeated: list[str], channel_titles: list[s
         "You are a professional YouTuber specializing in TRUE CRIME. "
         f"This is a YouTube Short: vertical 9:16, {int(MIN_TOTAL_SECONDS)}-{int(MAX_TOTAL_SECONDS)} seconds total. "
         f"{trend_rule}"
-        "You MUST select a real, well-documented true crime case (NO movies, NO TV shows, NO fiction, NO urban legends). "
+        "You MUST select a real, well-documented true crime case (NO movies, NO TV shows, NO fiction, NO urban legends). it should connect todays also"
         "The case must be interesting but NOT graphic, violent, or disturbing. "
         "Use only safe, censored wording suitable for YouTube. "
         f"{ignore_line}"

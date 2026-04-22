@@ -441,33 +441,7 @@ def _pick_thumbnail_for_video(video_path: Path) -> Path:
     if candidate.exists():
         return candidate
     return THUMBNAIL_PATH
-def _append_to_history(title: str, description: str):
-    ROOT = Path(__file__).resolve().parent
-    history_file = ROOT / "generating" / "history.json"
 
-    try:
-        if history_file.exists():
-            content = history_file.read_text(encoding="utf-8").strip()
-            data = json.loads(content) if content else []
-            if not isinstance(data, list):
-                data = []
-        else:
-            data = []
-
-        data.append({
-            "title": title,
-            "description": description
-        })
-
-        history_file.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False),
-            encoding="utf-8"
-        )
-
-        print("📂 Saved to history.json")
-
-    except Exception as e:
-        print(f"⚠️ Failed to update history.json: {e}")
 def main() -> None:
     youtube = _get_service()
     videos = _list_videos()
@@ -508,8 +482,7 @@ def main() -> None:
         print(f"\nUploading {video_path.name} ({i + 1}/{total_uploads})")
         video_id = _upload_video(youtube, video_path, title, description)
         _upload_thumbnail(youtube, video_id, _pick_thumbnail_for_video(video_path))
-        if video_id:
-            _append_to_history(title, description)
+
         if i < total_uploads - 1:
             next_time = datetime.now() + timedelta(seconds=WAIT_SECONDS_LOCAL)
             print(f"Next upload at ~{next_time.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -520,4 +493,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

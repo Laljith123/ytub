@@ -196,7 +196,7 @@ def _log_history_skip(message: str) -> None:
     global _history_skip_logged
     if _history_skip_logged:
         return
-    print(message)
+    print(message.encode("ascii", "ignore").decode())
     _history_skip_logged = True
 
 

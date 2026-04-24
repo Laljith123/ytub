@@ -791,7 +791,7 @@ def _run_completion(
     stop: list[str] | None = None,
 ) -> str:
     completion = client.chat.completions.create(
-        model="nvidia/nemotron-3-super-120b-a12b",
+        model="openai/gpt-oss-120b",
         messages=[
             {
                 "role": "system",

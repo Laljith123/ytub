@@ -87,8 +87,9 @@ rss_url = f"https://news.google.com/rss/search?q={keyword.replace(' ', '+')}"
 feed = feedparser.parse(rss_url)
 
 news_list = []
-start=int(random.random()*100)
-for entry in feed.entries[0:start]:
+entries = feed.entries
+random.shuffle(entries)
+for entry in entries[0:10]:
     news_list.append(
         {
             "source": entry.source.title if "source" in entry else "Google News",

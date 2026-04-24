@@ -41,7 +41,7 @@ search_keywords = [
 "famous crime mystery","top crime cases","biggest unsolved crime","most famous murders","popular true crime","top serial killer cases","famous unsolved mysteries","top crime investigation","popular murder mystery","famous case files",
 "top dark crimes","famous criminal cases","most shocking crimes","popular crime stories","top murder cases","famous investigation files","biggest crime mystery","popular unsolved crime","top mystery cases","famous cold cases",
 ]
-keyword = search_keywords(random.randint(0, len(search_keywords)-1))
+keyword = search_keywords[random.randint(0, len(search_keywords)-1)]
 keyword = quote(keyword)
 
 USE_PYTRENDS = os.getenv("TRENDS_USE_PYTRENDS", "1") == "1"

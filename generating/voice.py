@@ -1,4 +1,3 @@
-import base64
 import json
 import os
 import re
@@ -135,13 +134,9 @@ def generate_riva(chunk: str, path: Path):
     if not NVIDIA_API_KEY:
         raise RuntimeError("NVIDIA_API_KEY is missing.")
 
-    import grpc
     import riva.client
 
     auth = riva.client.Auth(
-        ssl_cert=None,
-        ssl_client_cert=None,
-        ssl_client_key=None,
         use_ssl=True,
         uri="grpc.nvcf.nvidia.com:443",
         metadata_args=[

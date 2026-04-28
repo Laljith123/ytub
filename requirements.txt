@@ -7,9 +7,10 @@ python-dotenv
 torchaudio==2.5.1
 TTS==0.22.0
 pydub
-elevenlabs
 google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
 yt-dlp
 importlib
+nvidia-riva-client
+grpcio

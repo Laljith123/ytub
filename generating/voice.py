@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import re
@@ -6,10 +7,6 @@ import subprocess
 import unicodedata
 from pathlib import Path
 
-import torch
-from TTS.api import TTS
-from TTS.tts.configs.xtts_config import XttsConfig
-from TTS.tts.models.xtts import XttsAudioConfig
 from pydub import AudioSegment
 from pydub.silence import detect_nonsilent
 
@@ -19,15 +16,24 @@ CHUNKS_DIR = OUTPUT_DIR / "chunks"
 OUTPUT_JSON = PROJECT_ROOT / "output.json"
 VOICE_SAMPLE = PROJECT_ROOT / "voices" / "master.wav"
 FINAL_WAV = OUTPUT_DIR / "final.wav"
+
+VOICE = os.getenv("VOICE", "XTTS").upper()
 VOICE_SPEED = float(os.getenv("VOICE_SPEED", "1.25"))
 VOICE_GAIN_DB = float(os.getenv("VOICE_GAIN_DB", "0"))
 
+RIVA_VOICE = os.getenv("RIVA_VOICE", "Magpie-Multilingual.EN-US.Aria")
+RIVA_LANGUAGE = os.getenv("RIVA_LANGUAGE", "en-US")
+NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
+
+
 def split_for_xtts(text, max_words=40):
-    paragraphs = re.split(r'\n\s*\n', text)
+    paragraphs = re.split(r"\n\s*\n", text)
     chunks = []
+
     for para in paragraphs:
-        sentences = re.split(r'(?<=[.!?]) +', para)
+        sentences = re.split(r"(?<=[.!?]) +", para)
         current = ""
+
         for s in sentences:
             if len((current + " " + s).split()) <= max_words:
                 current += " " + s
@@ -35,8 +41,10 @@ def split_for_xtts(text, max_words=40):
                 if current.strip():
                     chunks.append(current.strip())
                 current = s
+
         if current.strip():
             chunks.append(current.strip())
+
     return chunks
 
 
@@ -47,12 +55,15 @@ def _run(cmd: list[str]) -> None:
 def _atempo_chain(speed: float) -> str:
     parts = []
     rate = speed
+
     while rate > 2.0:
         parts.append("atempo=2.0")
         rate /= 2.0
+
     while rate < 0.5:
         parts.append("atempo=0.5")
         rate /= 0.5
+
     parts.append(f"atempo={rate:.5f}")
     return ",".join(parts)
 
@@ -60,9 +71,12 @@ def _atempo_chain(speed: float) -> str:
 def _speed_audio(path: Path, speed: float) -> None:
     if abs(speed - 1.0) < 1e-3:
         return
+
     if shutil.which("ffmpeg") is None:
         raise RuntimeError("ffmpeg not found; cannot apply VOICE_SPEED.")
+
     temp_path = path.with_suffix(".speed.wav")
+
     cmd = [
         "ffmpeg",
         "-y",
@@ -74,21 +88,9 @@ def _speed_audio(path: Path, speed: float) -> None:
         "pcm_s16le",
         str(temp_path),
     ]
+
     _run(cmd)
     temp_path.replace(path)
-
-
-if hasattr(torch.serialization, "add_safe_globals"):
-    torch.serialization.add_safe_globals([XttsConfig, XttsAudioConfig])
-
-tts = TTS(
-    model_name="tts_models/multilingual/multi-dataset/xtts_v2",
-    gpu=False
-)
-
-content = json.load(open(OUTPUT_JSON, "r", encoding="utf-8"))
-
-script_data = content[-1]["script"]
 
 
 def _clean_text(text: str) -> str:
@@ -100,6 +102,101 @@ def _clean_text(text: str) -> str:
     clean = re.sub(r"\s+", " ", clean).strip()
     return clean
 
+
+def generate_xtts(chunk: str, path: Path):
+    import torch
+    from TTS.api import TTS
+    from TTS.tts.configs.xtts_config import XttsConfig
+    from TTS.tts.models.xtts import XttsAudioConfig
+
+    if hasattr(torch.serialization, "add_safe_globals"):
+        torch.serialization.add_safe_globals([XttsConfig, XttsAudioConfig])
+
+    if not VOICE_SAMPLE.exists():
+        raise RuntimeError(f"Voice sample not found: {VOICE_SAMPLE}")
+
+    global XTTS_MODEL
+
+    if "XTTS_MODEL" not in globals():
+        XTTS_MODEL = TTS(
+            model_name="tts_models/multilingual/multi-dataset/xtts_v2",
+            gpu=False,
+        )
+
+    XTTS_MODEL.tts_to_file(
+        text=chunk,
+        speaker_wav=str(VOICE_SAMPLE),
+        language="en",
+        file_path=str(path),
+    )
+
+
+def generate_riva(chunk: str, path: Path):
+    if not NVIDIA_API_KEY:
+        raise RuntimeError("NVIDIA_API_KEY is missing.")
+
+    import grpc
+    import riva.client
+
+    auth = riva.client.Auth(
+        ssl_cert=None,
+        use_ssl=True,
+        uri="grpc.nvcf.nvidia.com:443",
+        metadata_args=[
+            ["function-id", "877104f7-e885-42b9-8de8-f6e4c6303969"],
+            ["authorization", f"Bearer {NVIDIA_API_KEY}"],
+        ],
+    )
+
+    service = riva.client.SpeechSynthesisService(auth)
+
+    response = service.synthesize(
+        text=chunk,
+        voice_name=RIVA_VOICE,
+        language_code=RIVA_LANGUAGE,
+        sample_rate_hz=44100,
+        encoding=riva.client.AudioEncoding.LINEAR_PCM,
+    )
+
+    raw_audio = response.audio
+
+    temp_raw = path.with_suffix(".raw")
+    temp_raw.write_bytes(raw_audio)
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-f",
+        "s16le",
+        "-ar",
+        "44100",
+        "-ac",
+        "1",
+        "-i",
+        str(temp_raw),
+        "-c:a",
+        "pcm_s16le",
+        str(path),
+    ]
+
+    _run(cmd)
+    temp_raw.unlink(missing_ok=True)
+
+
+def generate_voice_chunk(chunk: str, path: Path):
+    if VOICE == "XTTS":
+        generate_xtts(chunk, path)
+    elif VOICE == "RIVA":
+        generate_riva(chunk, path)
+    else:
+        raise RuntimeError(f"Unknown VOICE backend: {VOICE}. Use XTTS or RIVA.")
+
+
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+CHUNKS_DIR.mkdir(parents=True, exist_ok=True)
+
+content = json.load(open(OUTPUT_JSON, "r", encoding="utf-8"))
+script_data = content[-1]["script"]
 
 if isinstance(script_data, list):
     raw_chunks = [str(x) for x in script_data if str(x).strip()]
@@ -114,44 +211,49 @@ if len(clean_chunks) == 1 and not isinstance(script_data, list):
 else:
     chunks = clean_chunks
 
-CHUNKS_DIR.mkdir(parents=True, exist_ok=True)
-
 paths = []
-
-if not VOICE_SAMPLE.exists():
-    raise RuntimeError(f"Voice sample not found: {VOICE_SAMPLE}")
 
 for i, chunk in enumerate(chunks):
     path = CHUNKS_DIR / f"output_{i:03d}.wav"
-    tts.tts_to_file(
-        text=chunk,
-        speaker_wav=str(VOICE_SAMPLE),
-        language="en",
-        file_path=str(path)
-    )
+
+    print(f"Generating voice chunk {i + 1}/{len(chunks)} using {VOICE}: {chunk[:80]}")
+
+    generate_voice_chunk(chunk, path)
     _speed_audio(path, VOICE_SPEED)
+
     if not path.exists() or path.stat().st_size < 1024:
         raise RuntimeError(f"Generated chunk is missing or too small: {path}")
+
     paths.append(path)
 
 combined = AudioSegment.empty()
 
 for i, p in enumerate(paths):
     audio = AudioSegment.from_wav(str(p))
-    nonsilent = detect_nonsilent(audio, min_silence_len=120, silence_thresh=-42)
+
+    nonsilent = detect_nonsilent(
+        audio,
+        min_silence_len=120,
+        silence_thresh=-42,
+    )
+
     if nonsilent:
         start = nonsilent[0][0]
         end = nonsilent[-1][1]
         audio = audio[start:end]
+
     if i == 0:
         combined = audio
     else:
         combined = combined.append(audio, crossfade=180)
 
 combined = combined.normalize()
+
 if abs(VOICE_GAIN_DB) > 1e-3:
     combined = combined.apply_gain(VOICE_GAIN_DB)
+
 combined.export(str(FINAL_WAV), format="wav")
+
 if not FINAL_WAV.exists() or FINAL_WAV.stat().st_size < 1024:
     raise RuntimeError("Final voice output is missing or too small.")
 
@@ -161,3 +263,5 @@ if os.getenv("VOICE_CLEANUP", "1") == "1":
             p.unlink()
         except OSError as exc:
             print(f"Unable to delete {p}: {exc}")
+
+print(f"Final voice saved: {FINAL_WAV}")

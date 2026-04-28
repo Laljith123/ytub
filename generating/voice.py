@@ -140,6 +140,8 @@ def generate_riva(chunk: str, path: Path):
 
     auth = riva.client.Auth(
         ssl_cert=None,
+        ssl_client_cert=None,
+        ssl_client_key=None,
         use_ssl=True,
         uri="grpc.nvcf.nvidia.com:443",
         metadata_args=[

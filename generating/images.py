@@ -13,6 +13,7 @@ import requests
 from dotenv import load_dotenv
 
 INVOKE_URL = "https://ai.api.nvidia.com/v1/genai/qwen/qwen-image"
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_JSON = PROJECT_ROOT / "output.json"
 OUT_DIR = PROJECT_ROOT / "output" / "image"

@@ -12,7 +12,7 @@ from typing import Any, Dict, List
 import requests
 from dotenv import load_dotenv
 
-INVOKE_URL = "https://ai.api.nvidia.com/v1/genai/qwen/qwen-image"
+INVOKE_URL = "https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-schnell"
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_JSON = PROJECT_ROOT / "output.json"

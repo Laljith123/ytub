@@ -29,6 +29,20 @@ except Exception:  # pragma: no cover
     OpenAI = None
 
 
+def _configure_console_encoding() -> None:
+    """Keep GitHub Actions Windows logs from crashing on Unicode trend text."""
+    for stream in (getattr(sys, "stdout", None), getattr(sys, "stderr", None)):
+        if stream is None or not hasattr(stream, "reconfigure"):
+            continue
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
+_configure_console_encoding()
+
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 

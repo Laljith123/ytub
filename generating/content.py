@@ -38,6 +38,42 @@ SIMILARITY_THRESHOLD = float(os.getenv("CONTENT_DUP_SIM", "0.82"))
 MAX_OUTPUT_CHARS = int(os.getenv("CONTENT_MAX_OUTPUT_CHARS", "8000"))
 MAX_NGRAM_REPEAT = int(os.getenv("CONTENT_MAX_NGRAM_REPEAT", "20"))
 FALLBACK_MAX_TOKENS = int(os.getenv("CONTENT_FALLBACK_MAX_TOKENS", "4096"))
+CONTENT_MODEL = os.getenv("CONTENT_MODEL", "openai/gpt-oss-120b")
+NVIDIA_BASE_URL = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+TITLE_MAX_CHARS = int(os.getenv("CONTENT_TITLE_MAX_CHARS", "80"))
+HOOK_MAX_WORDS = int(os.getenv("CONTENT_HOOK_MAX_WORDS", "18"))
+CAPTION_MAX_CHARS = int(os.getenv("CONTENT_CAPTION_MAX_CHARS", "220"))
+THUMBNAIL_TEXT_MAX_WORDS = int(os.getenv("CONTENT_THUMBNAIL_TEXT_MAX_WORDS", "5"))
+HASHTAG_MIN_COUNT = int(os.getenv("CONTENT_HASHTAG_MIN_COUNT", "8"))
+HASHTAG_MAX_COUNT = int(os.getenv("CONTENT_HASHTAG_MAX_COUNT", "15"))
+RETENTION_TRIGGER_MIN_COUNT = int(os.getenv("CONTENT_RETENTION_TRIGGER_MIN_COUNT", "3"))
+RETENTION_TRIGGER_MAX_COUNT = int(os.getenv("CONTENT_RETENTION_TRIGGER_MAX_COUNT", "6"))
+BACKGROUND_MUSIC_MIN_WORDS = int(os.getenv("CONTENT_BACKGROUND_MUSIC_MIN_WORDS", "4"))
+BACKGROUND_MUSIC_MAX_WORDS = int(os.getenv("CONTENT_BACKGROUND_MUSIC_MAX_WORDS", "8"))
+PROMPT_CAMERA_CUES = os.getenv(
+    "CONTENT_CAMERA_CUES",
+    "slow dolly,tracking shot,handheld,wide establishing,close-up",
+)
+PROMPT_STORY_STRUCTURE = os.getenv(
+    "CONTENT_STORY_STRUCTURE",
+    "Hook, discovery, escalation, twist or unanswered question",
+)
+PROMPT_STYLE_NOTE = os.getenv(
+    "CONTENT_STYLE_NOTE",
+    "respectful suspense, simple spoken English, high retention pacing",
+)
+REQUIRED_FIELDS = {
+    "title",
+    "hook",
+    "script",
+    "image",
+    "caption",
+    "thumbnail_text",
+    "hashtags",
+    "retention_triggers",
+    "trend",
+    "background_music",
+}
 YOUTUBE_UPLOAD_SCOPE = "https://www.googleapis.com/auth/youtube.upload"
 YOUTUBE_HISTORY_SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
 YOUTUBE_HISTORY_REQUIRED_SCOPES = [YOUTUBE_UPLOAD_SCOPE, YOUTUBE_HISTORY_SCOPE]
@@ -170,21 +206,100 @@ def extract_json(s, trends):
             return {}
 
 
+def _word_count(text: str) -> int:
+    return len(str(text or "").strip().split())
+
+
+def _is_plain_ascii_words(text: str) -> bool:
+    value = str(text or "").strip()
+    if not value:
+        return False
+    return bool(re.fullmatch(r"[A-Za-z0-9 ]+", value))
+
+
+def _valid_hashtags(items) -> bool:
+    if not isinstance(items, list):
+        return False
+    if not (HASHTAG_MIN_COUNT <= len(items) <= HASHTAG_MAX_COUNT):
+        return False
+    seen: set[str] = set()
+    for item in items:
+        tag = str(item or "").strip()
+        if not tag or not tag.startswith("#") or " " in tag:
+            return False
+        norm = tag.lower()
+        if norm in seen:
+            return False
+        seen.add(norm)
+    return True
+
+
+def _valid_string_list(items, min_count: int, max_count: int) -> bool:
+    if not isinstance(items, list):
+        return False
+    if not (min_count <= len(items) <= max_count):
+        return False
+    return all(bool(str(item or "").strip()) for item in items)
+
+
 def is_valid(data):
     if not isinstance(data, dict):
         return False
-    required = {"title", "script", "image", "trend","background_music" }
-    if set(data.keys()) != required:
+    if set(data.keys()) != REQUIRED_FIELDS:
         return False
+
+    title = str(data.get("title") or "").strip()
+    if not title or len(title) > TITLE_MAX_CHARS:
+        return False
+
+    hook = str(data.get("hook") or "").strip()
+    if not hook or _word_count(hook) > HOOK_MAX_WORDS:
+        return False
+
+    script = data.get("script")
+    image = data.get("image")
+    if not isinstance(script, list) or not isinstance(image, list):
+        return False
+    if not (MIN_SCENES <= len(script) <= MAX_SCENES):
+        return False
+    if len(script) != len(image):
+        return False
+    if not all(bool(str(item or "").strip()) for item in script):
+        return False
+    if not all(bool(str(item or "").strip()) for item in image):
+        return False
+
+    caption = str(data.get("caption") or "").strip()
+    if not caption or len(caption) > CAPTION_MAX_CHARS:
+        return False
+
+    thumbnail_text = str(data.get("thumbnail_text") or "").strip()
+    if not thumbnail_text or _word_count(thumbnail_text) > THUMBNAIL_TEXT_MAX_WORDS:
+        return False
+
+    if not _valid_hashtags(data.get("hashtags")):
+        return False
+
+    if not _valid_string_list(
+        data.get("retention_triggers"),
+        RETENTION_TRIGGER_MIN_COUNT,
+        RETENTION_TRIGGER_MAX_COUNT,
+    ):
+        return False
+
     bg = str(data.get("background_music") or "").strip()
-    if not bg:
+    bg_words = _word_count(bg)
+    if not bg or not _is_plain_ascii_words(bg):
         return False
+    if not (BACKGROUND_MUSIC_MIN_WORDS <= bg_words <= BACKGROUND_MUSIC_MAX_WORDS):
+        return False
+
     trend = str(data.get("trend") or "").strip()
     if not trend or trend.isdigit():
         return False
     return True
 
-    
+
 def _normalize(text: str) -> str:
     text = text.lower()
     text = re.sub(r"[^a-z0-9\s]", " ", text)
@@ -683,6 +798,9 @@ def _build_prompt(trends: list[str], repeated: list[str], channel_titles: list[s
     unused_topics = [t for t in trend_topics if _normalize(t) not in used_norm]
     all_used = bool(trend_topics) and not unused_topics
     prompt_channel_titles = channel_titles[: _youtube_history_prompt_limit()]
+    camera_cues = [cue.strip() for cue in PROMPT_CAMERA_CUES.split(",") if cue.strip()]
+    camera_cue_line = ", ".join(camera_cues) if camera_cues else "natural documentary camera movement"
+    required_fields_line = ", ".join(sorted(REQUIRED_FIELDS))
     ignore_line = (
         f"Do NOT choose these trend topics from the list: {used_topics}. " if used_topics else ""
     )
@@ -706,81 +824,81 @@ def _build_prompt(trends: list[str], repeated: list[str], channel_titles: list[s
     else:
         pick_line = ""
     trend_rule = (
-        f"Select the most popular REAL true crime case from this list of trends: {trend_topics}. "
+        f"Select the strongest REAL true crime case from this list of trends: {trend_topics}. "
         if not all_used
         else (
             f"All listed trend topics are already used in output.json. "
-            f"Ignore the list {trend_topics} and pick ANY real case NOT in output.json{history_suffix}. "
+            f"Ignore the list {trend_topics} and pick ANY real true crime case NOT in output.json{history_suffix}. "
             "Set \"trend\" to the exact case name you chose."
         )
     )
     return (
-        "You are a professional YouTuber specializing in TRUE CRIME. "
-        f"This is a YouTube Short: vertical 9:16, {int(MIN_TOTAL_SECONDS)}-{int(MAX_TOTAL_SECONDS)} seconds total. "
+        "You are a professional YouTube Shorts true crime writer and retention editor. "
+        f"This is a vertical 9:16 YouTube Short, {int(MIN_TOTAL_SECONDS)}-{int(MAX_TOTAL_SECONDS)} seconds total. "
         f"{trend_rule}"
-        "You MUST select a real, well-documented true crime case (NO movies, NO TV shows, NO fiction, NO urban legends). it should connect todays also"
-        "The case must be interesting but NOT graphic, violent, or disturbing. "
-        "Use only safe, censored wording suitable for YouTube. "
+        "You MUST select a real, well-documented true crime case. "
+        "Do NOT choose movies, TV shows, fictional stories, creepypasta, urban legends, or invented cases. "
+        "Use only public, documentable facts. Do NOT invent updates, evidence, quotes, dates, or police actions. "
+        "If a provided trend has a current public-interest angle, connect it naturally without forcing it. "
+        "Keep it suitable for YouTube: no gore, no graphic injury details, no cruelty, no victim-blaming, and no jokes about victims. "
+        "Focus on mystery, timeline, investigation, decisions, clues, and unanswered questions. "
         f"{ignore_line}"
         f"{history_line}"
         f"{history_rule}"
         f"{pick_line}"
-        f"Create a {int(MIN_TOTAL_SECONDS)}-{int(MAX_TOTAL_SECONDS)} second YouTube documentary package. "
-        "Return ONE valid JSON object ONLY (no extra text, no markdown, no code blocks, no commentary) with these fields: "
-        "{\"title\": \"...\", \"script\": [\"scene 1 narration\", \"scene 2 narration\", \"...\"], "
-        "\"image\": [\"scene 1 image prompt\", \"scene 2 image prompt\", \"...\"], "
-        "\"trend\": \"selected trend topic text only\", \"background_music\": \"Short music search query\"}. "
+        f"Create a high-retention {int(MIN_TOTAL_SECONDS)}-{int(MAX_TOTAL_SECONDS)} second YouTube Shorts content package. "
+        f"Story structure: {PROMPT_STORY_STRUCTURE}. "
+        f"Style: {PROMPT_STYLE_NOTE}. "
+        "Return ONE valid JSON object ONLY. No extra text, no markdown, no code blocks, no commentary. "
+        f"The JSON object MUST contain exactly these fields: {required_fields_line}. "
+        "Use this exact JSON shape: "
+        "{"
+        "\"title\": \"...\", "
+        "\"hook\": \"...\", "
+        "\"script\": [\"scene narration\"], "
+        "\"image\": [\"scene image prompt\"], "
+        "\"caption\": \"...\", "
+        "\"thumbnail_text\": \"...\", "
+        "\"hashtags\": [\"#tag\"], "
+        "\"retention_triggers\": [\"...\"], "
+        "\"trend\": \"selected trend topic text only\", "
+        "\"background_music\": \"short music search query\""
+        "}. "
         "STRICT RULES: "
-        "0. The first 5 seconds MUST be a strong hook with a sudden-stop beat. "
-        "0b. Focus ONLY on the main story beats and important facts (NO filler, NO recap, NO speculation). "
-        "Every line MUST add a new, concrete detail or turning point. "
-        "Include ONLY the core facts: who, what, where, when, how. "
-        "1. script MUST be a list of narration scenes. "
-        "2. image MUST be a list of image prompts. "
-        "3. script and image lists MUST be the SAME LENGTH. "
-        f"4. Each script item = 1-2 short sentences (tight pacing ~{int(SCENE_SECONDS)}s per clip). "
-        f"5. Total scenes: {MIN_SCENES}-{MAX_SCENES} "
-        f"(about one scene every {int(SCENE_SECONDS)} seconds). "
-        "6. Images MUST describe cinematic, photorealistic, documentary b-roll visuals "
-        "   matched to the narration. Each prompt MUST include a clear subject, setting, "
-        "   time-of-day, and action. Add subtle camera cues like "
-        "   'slow dolly', 'tracking shot', 'handheld', 'wide establishing', 'close-up', "
-        "   but still describe a single frame. Use vertical 9:16 framing cues. "
-        "7. People/locations MUST be consistent across scenes where applicable "
-        "   (same clothing, same location details). "
-        "8. Do NOT include graphic, disturbing, or inappropriate imagery. "
-        "9. Do NOT mention movies, actors, TV shows, or fictional elements. "
-        "10. Do NOT include scene labels like 'Scene 1'. "
-        "11. Do NOT include timestamps. "
-        "12. Do NOT include quotes outside JSON. "
-        "13. Write in engaging YouTube storytelling style ONLY. "
-        "14. Make it interactive: ask short questions to the viewer, add sudden-stop beats "
-        "(short fragments for tension), and use light Gen Z-leaning slang "
-        "(lowkey, no cap, vibes) sparingly. Keep it professional and safe. "
-        "14b. Prioritize engaging, meaningful storytelling over filler pacing; "
-        "high information density is REQUIRED. "
-        "14c. Sound human and present: include brief personal asides or reactions "
-        "(a quick breath, a soft gasp, a quiet sigh, a short pause) to mirror "
-        "real narration — but remain respectful and NEVER joke about victims. "
-        "Empathy first, curiosity second. "
-        "15. The final scene MUST end with a mystery-style question to the viewer. "
-        "16. If you cannot comply with ALL rules, return an empty JSON object {} ONLY. "
-        "17. Do NOT repeat any lines or image prompts within the output. "
-        "18. Do NOT repeat or paraphrase titles, lines, or image prompts from earlier videos. "
-        "19. Do NOT reuse or paraphrase the same phrasing from earlier videos. "
-        "19b. \"trend\" MUST be the exact topic text you chose (no numbers, no sources). "
-        "20. If none of the provided trends are usable, pick ANY real murder case "
-        f"that does NOT appear in output.json{history_suffix} and set \"trend\" to the exact case name. "
-        "21. Do NOT output any reasoning, analysis, or extra text outside JSON. "
-        "22. If you start repeating or looping, STOP and return {} ONLY. "
-        "23. background_music MUST be a SHORT search query (4-8 words), plain ASCII, "
-        "no punctuation/emojis, no quotes, no special characters. "
-        "24. Keep it general and searchable (e.g., 'ambient piano suspense', "
-        "'dark cinematic drone'). "
-        "25. If background_music is missing or empty, return {} ONLY. "
-        "26. Output MUST be valid JSON and nothing else."
+        f"0. title MUST be under {TITLE_MAX_CHARS} characters and written for curiosity, not clickbait lies. "
+        f"1. hook MUST be under {HOOK_MAX_WORDS} words and MUST create curiosity, danger, contradiction, or an unanswered question. "
+        "2. The first script item MUST deliver the hook immediately with a sudden-stop beat or sharp curiosity gap. "
+        "3. script MUST be a list of narration scenes. "
+        "4. image MUST be a list of image prompts. "
+        "5. script and image lists MUST be the SAME LENGTH. "
+        f"6. Total scenes: {MIN_SCENES}-{MAX_SCENES} scenes, about one scene every {int(SCENE_SECONDS)} seconds. "
+        f"7. Each script item = 1-2 short spoken sentences, tight pacing around {int(SCENE_SECONDS)} seconds per clip. "
+        "8. Every script item MUST add one new fact, clue, decision, location, time shift, or turning point. "
+        "9. No filler, no recap, no repeated phrasing, no generic true-crime lines. "
+        "10. Include only core facts: who, what, where, when, how, and why it still matters if known. "
+        "11. Make the narration human and suspenseful: short questions, natural pauses, and curiosity gaps are allowed. "
+        "12. Do NOT use slang. Do NOT make memes. Do NOT sound like a robot. "
+        "13. Empathy first, curiosity second. Respect victims and families. "
+        "14. The final script item MUST end with a mystery-style question to the viewer. "
+        "15. Images MUST be cinematic, photorealistic, documentary b-roll visuals matched to each narration scene. "
+        "16. Each image prompt MUST include a clear subject, setting, time-of-day, action, vertical 9:16 framing, and one camera cue. "
+        f"17. Camera cues can follow this style: {camera_cue_line}. "
+        "18. People, clothing, props, weather, and locations MUST stay consistent across scenes where applicable. "
+        "19. Do NOT show graphic, disturbing, exploitative, or inappropriate imagery. "
+        "20. Do NOT mention movies, actors, TV shows, fictional elements, or unrelated pop culture. "
+        "21. Do NOT include scene labels, timestamps, camera metadata labels, or quotes outside JSON. "
+        f"22. caption MUST be under {CAPTION_MAX_CHARS} characters and should invite comments without begging. "
+        f"23. thumbnail_text MUST be {THUMBNAIL_TEXT_MAX_WORDS} words or fewer, high curiosity, no false claim. "
+        f"24. hashtags MUST contain {HASHTAG_MIN_COUNT}-{HASHTAG_MAX_COUNT} short hashtags, each starting with # and containing no spaces. "
+        f"25. retention_triggers MUST contain {RETENTION_TRIGGER_MIN_COUNT}-{RETENTION_TRIGGER_MAX_COUNT} short reasons this Short keeps attention. "
+        "26. trend MUST be the exact case/topic text you chose, with no numbering and no source labels. "
+        f"27. background_music MUST be {BACKGROUND_MUSIC_MIN_WORDS}-{BACKGROUND_MUSIC_MAX_WORDS} plain ASCII words only, no punctuation, no emojis, no quotes, no special characters. "
+        "28. Do NOT repeat or paraphrase titles, lines, cases, or image prompts from earlier videos. "
+        f"29. If none of the provided trends are usable, pick ANY real true crime case that does NOT appear in output.json{history_suffix}. "
+        "30. If you cannot comply with ALL rules, return an empty JSON object {} ONLY. "
+        "31. If you start repeating or looping, STOP and return {} ONLY. "
+        "32. Output MUST be valid JSON and nothing else."
     )
-
 
 def _run_completion(
     client: OpenAI,
@@ -791,7 +909,7 @@ def _run_completion(
     stop: list[str] | None = None,
 ) -> str:
     completion = client.chat.completions.create(
-        model="openai/gpt-oss-120b",
+        model=CONTENT_MODEL,
         messages=[
             {
                 "role": "system",
@@ -829,7 +947,7 @@ def _run_completion(
 def contents(trends):
     load_dotenv()
     client = OpenAI(
-        base_url="https://integrate.api.nvidia.com/v1",
+        base_url=NVIDIA_BASE_URL,
         api_key=os.getenv("NVIDIA_API_KEY")
     )
     repeated = []

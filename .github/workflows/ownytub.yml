@@ -218,4 +218,20 @@ jobs:
           TRENDS_USED_PROMPT_LIMIT: "120"
           TRENDS_AI_REQUIRE_SOURCE_MATCH: "1"
           OUTPUT_JSON_PATH: ${{ github.workspace }}\output.json
+          #youtube
+          YOUTUBE_METADATA_AI_ENABLED: "1"
+          YOUTUBE_METADATA_MODEL: "openai/gpt-oss-120b"
+          YOUTUBE_METADATA_BASE_URL: "https://integrate.api.nvidia.com/v1"
+          YOUTUBE_METADATA_MAX_ATTEMPTS: "3"
+          YOUTUBE_METADATA_MAX_TOKENS: "4096"
+          YOUTUBE_METADATA_TEMPERATURE: "0.35"
+          YOUTUBE_METADATA_TOP_P: "0.9"
+          YOUTUBE_METADATA_ENABLE_THINKING: "1"
+          YOUTUBE_METADATA_REASONING_BUDGET: "4096"
+          YOUTUBE_METADATA_TITLE_MAX_CHARS: "75"
+          YOUTUBE_METADATA_DESCRIPTION_MAX_CHARS: "1200"
+          YOUTUBE_METADATA_TAG_MIN_COUNT: "8"
+          YOUTUBE_METADATA_TAG_MAX_COUNT: "15"
+          YOUTUBE_METADATA_HASHTAG_MIN_COUNT: "8"
+          YOUTUBE_METADATA_HASHTAG_MAX_COUNT: "15"
         run: python pipeline.py

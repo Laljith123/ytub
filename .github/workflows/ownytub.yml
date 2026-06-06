@@ -57,9 +57,9 @@ jobs:
           CAMB_API_KEY: ${{ secrets.CAMB_API_KEY }}
         run: |
           if (-not $env:CAMB_API_KEY) {
-            echo "::warning::Missing GitHub secret CAMB_API_KEY. The voice step will try Puter TTS fallback, then Edge TTS."
+            echo "::warning::Missing GitHub secret CAMB_API_KEY. The voice step will try Puter ElevenLabs first, then skip to Edge TTS if CAMB is unavailable."
           } else {
-            echo "CAMB_API_KEY is configured. Puter TTS remains available as fallback."
+            echo "CAMB_API_KEY is configured. Voice order is Puter ElevenLabs, CAMB, then Edge TTS."
           }
 
       # 🎲 Always run, but randomize how many to generate (>=1)
@@ -99,18 +99,19 @@ jobs:
           JSON_MODEL_DISCOVERY_ENABLED: "1"
           JSON_MODEL_CANDIDATES: "gpt-4o,gpt-5-chat,grok-4.20-0309-non-reasoning,openai/gpt-4o-mini,gpt-4o-mini"
           JSON_EXTRA_BODY_ENABLED: ${{ vars.JSON_EXTRA_BODY_ENABLED }}
-          VOICE: "CAMB"
-          TTS_BACKEND: "camb"
-          TTS_FALLBACK_BACKENDS: "puter,edge"
+          VOICE: "Puter ElevenLabs"
+          TTS_BACKEND: "puter"
+          TTS_FALLBACK_BACKENDS: "camb,edge"
           CAMB_LANGUAGE: "en-us"
           CAMB_VOICE_ID: ${{ vars.CAMB_VOICE_ID }}
           CAMB_SPEECH_MODEL: ${{ vars.CAMB_SPEECH_MODEL }}
           CAMB_SPEAKING_RATE: "0.94"
           CAMB_USER_INSTRUCTIONS: "Sound like a calm friend explaining a strange true-crime case. Keep the delivery continuous and human, with only tiny natural pauses. Speak slightly slower than normal for clarity, but do not drag the pacing."
-          PUTER_TTS_PROVIDER: "openai"
-          PUTER_TTS_MODEL: ${{ vars.PUTER_TTS_MODEL || 'gpt-4o-mini-tts' }}
-          PUTER_TTS_VOICE: ${{ vars.PUTER_TTS_VOICE || 'shimmer' }}
-          PUTER_TTS_RESPONSE_FORMAT: "wav"
+          PUTER_TTS_PROVIDER: "elevenlabs"
+          PUTER_TTS_MODEL: ${{ vars.PUTER_TTS_MODEL || 'eleven_multilingual_v2' }}
+          PUTER_TTS_VOICE: ${{ vars.PUTER_TTS_VOICE || '21m00Tcm4TlvDq8ikWAM' }}
+          PUTER_TTS_RESPONSE_FORMAT: ""
+          PUTER_TTS_OUTPUT_FORMAT: ${{ vars.PUTER_TTS_OUTPUT_FORMAT || 'mp3_44100_128' }}
           PUTER_TTS_TIMEOUT_MS: "120000"
           PUTER_TTS_INSTRUCTIONS: "Speak like a calm friend explaining a strange true-crime case. Keep it continuous, natural, and easy to understand. Use a slightly slower pace with tiny human pauses, never a news-reader tone."
           EDGE_TTS_VOICE: "en-US-GuyNeural"

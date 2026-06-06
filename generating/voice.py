@@ -36,10 +36,10 @@ CHUNKS_DIR = OUTPUT_DIR / "chunks"
 OUTPUT_JSON = Path(os.getenv("OUTPUT_JSON_PATH", str(PROJECT_ROOT / "output.json")))
 FINAL_WAV = OUTPUT_DIR / "final.wav"
 
-TTS_BACKEND = os.getenv("TTS_BACKEND", "camb").strip().lower()
+TTS_BACKEND = os.getenv("TTS_BACKEND", "puter").strip().lower()
 TTS_FALLBACK_BACKENDS = [
     item.strip().lower()
-    for item in os.getenv("TTS_FALLBACK_BACKENDS", "puter,edge").split(",")
+    for item in os.getenv("TTS_FALLBACK_BACKENDS", "camb,edge").split(",")
     if item.strip()
 ]
 VOICE_SPEED = float(os.getenv("VOICE_SPEED", "1.0"))
@@ -68,11 +68,13 @@ EDGE_TTS_RATE = os.getenv("EDGE_TTS_RATE", "-10%")
 EDGE_TTS_VOLUME = os.getenv("EDGE_TTS_VOLUME", "+0%")
 EDGE_TTS_PITCH = os.getenv("EDGE_TTS_PITCH", "-2Hz")
 
-PUTER_TTS_PROVIDER = os.getenv("PUTER_TTS_PROVIDER", "openai").strip() or "openai"
-PUTER_TTS_MODEL = os.getenv("PUTER_TTS_MODEL", "gpt-4o-mini-tts").strip() or "gpt-4o-mini-tts"
-PUTER_TTS_VOICE = os.getenv("PUTER_TTS_VOICE", "shimmer").strip() or "shimmer"
+PUTER_TTS_PROVIDER = os.getenv("PUTER_TTS_PROVIDER", "elevenlabs").strip() or "elevenlabs"
+PUTER_TTS_MODEL = os.getenv("PUTER_TTS_MODEL", "eleven_multilingual_v2").strip() or "eleven_multilingual_v2"
+PUTER_TTS_VOICE = os.getenv("PUTER_TTS_VOICE", "21m00Tcm4TlvDq8ikWAM").strip() or "21m00Tcm4TlvDq8ikWAM"
 PUTER_TTS_LANGUAGE = os.getenv("PUTER_TTS_LANGUAGE", "").strip()
-PUTER_TTS_RESPONSE_FORMAT = os.getenv("PUTER_TTS_RESPONSE_FORMAT", "wav").strip() or "wav"
+PUTER_TTS_RESPONSE_FORMAT = os.getenv("PUTER_TTS_RESPONSE_FORMAT", "").strip()
+PUTER_TTS_OUTPUT_FORMAT = os.getenv("PUTER_TTS_OUTPUT_FORMAT", "mp3_44100_128").strip()
+PUTER_TTS_INCLUDE_INSTRUCTIONS = os.getenv("PUTER_TTS_INCLUDE_INSTRUCTIONS", "0") == "1"
 PUTER_TTS_INSTRUCTIONS = os.getenv(
     "PUTER_TTS_INSTRUCTIONS",
     (
@@ -670,11 +672,14 @@ def _puter_options() -> dict:
         "provider": PUTER_TTS_PROVIDER,
         "voice": PUTER_TTS_VOICE,
         "model": PUTER_TTS_MODEL,
-        "response_format": PUTER_TTS_RESPONSE_FORMAT,
     }
+    if PUTER_TTS_RESPONSE_FORMAT:
+        options["response_format"] = PUTER_TTS_RESPONSE_FORMAT
+    if PUTER_TTS_OUTPUT_FORMAT:
+        options["output_format"] = PUTER_TTS_OUTPUT_FORMAT
     if PUTER_TTS_LANGUAGE:
         options["language"] = PUTER_TTS_LANGUAGE
-    if PUTER_TTS_INSTRUCTIONS:
+    if PUTER_TTS_INSTRUCTIONS and (PUTER_TTS_INCLUDE_INSTRUCTIONS or PUTER_TTS_PROVIDER.lower() != "elevenlabs"):
         options["instructions"] = PUTER_TTS_INSTRUCTIONS
     return options
 
@@ -691,6 +696,8 @@ def _extension_for_audio(mime: str) -> str:
         return "aac"
     if "flac" in normalized:
         return "flac"
+    if PUTER_TTS_OUTPUT_FORMAT:
+        return PUTER_TTS_OUTPUT_FORMAT.split("_", 1)[0].lstrip(".") or "mp3"
     return PUTER_TTS_RESPONSE_FORMAT.lstrip(".") or "wav"
 
 

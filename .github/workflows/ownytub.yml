@@ -138,6 +138,7 @@ jobs:
           CONTENT_MAX_TOKENS: "3072"
           CONTENT_REASONING_BUDGET: "0"
           CONTENT_USED_PROMPT_LIMIT: "60"
+          CONTENT_LOCAL_FALLBACK_ENABLED: "1"
           CONTENT_TITLE_MAX_CHARS: "80"
           CONTENT_HOOK_MAX_WORDS: "18"
           CONTENT_CAPTION_MAX_CHARS: "220"
@@ -191,7 +192,7 @@ jobs:
           # Trend.py collector + AI judge config
           TRENDS_USE_GOOGLE_NEWS: "1"
           TRENDS_USE_YOUTUBE_SUGGEST: "1"
-          TRENDS_USE_AI_JUDGE: "1"
+          TRENDS_USE_AI_JUDGE: "0"
           TRENDS_KEYWORD_SAMPLE: "8"
           TRENDS_KEYWORD_MODE: "random"
           TRENDS_NEWS_LIMIT_PER_KEYWORD: "8"

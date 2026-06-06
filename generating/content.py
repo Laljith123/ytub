@@ -54,6 +54,33 @@ CONTENT_BASE_URL = json_base_url("CONTENT_BASE_URL")
 CONTENT_API_KEY = json_api_key("CONTENT_API_KEY")
 FALLBACK_MAX_TOKENS = int(os.getenv("CONTENT_FALLBACK_MAX_TOKENS", "4096"))
 USED_PROMPT_LIMIT = max(0, int(os.getenv("CONTENT_USED_PROMPT_LIMIT", "60")))
+LOCAL_FALLBACK_ENABLED = os.getenv("CONTENT_LOCAL_FALLBACK_ENABLED", "1") == "1"
+LOCAL_FALLBACK_REJECT_TERMS = tuple(
+    term.strip().lower()
+    for term in re.split(
+        r"[|,]",
+        os.getenv(
+            "CONTENT_LOCAL_FALLBACK_REJECT_TERMS",
+            "movie|movies|film|films|tv show|series|episode|episodes|hulu|netflix|"
+            "trailer|review|reviews|recap|podcast|podcasting|psychologist|psychology|"
+            "study|culture|christians|discourse|warning|poses the question",
+        ),
+    )
+    if term.strip()
+)
+LOCAL_FALLBACK_CASE_TERMS = tuple(
+    term.strip().lower()
+    for term in re.split(
+        r"[|,]",
+        os.getenv(
+            "CONTENT_LOCAL_FALLBACK_CASE_TERMS",
+            "case|cold case|murder|murdered|missing|slaying|homicide|killer|killed|"
+            "shooting|death|dead|dna|suspect|victim|unsolved|disappeared|abduction|"
+            "drive by|found|police|family",
+        ),
+    )
+    if term.strip()
+)
 CONTENT_MODEL = resolve_json_model(
     json_model("CONTENT_MODEL"),
     CONTENT_BASE_URL,
@@ -657,6 +684,411 @@ def _clean_trend_list(items: list, *, allow_numeric: bool = True) -> list[str]:
     return cleaned
 
 
+def _compact_text(text: object) -> str:
+    return re.sub(r"\s+", " ", str(text or "")).strip()
+
+
+def _stable_choice(seed: str, options: list[str]) -> str:
+    if not options:
+        return ""
+    return options[sum(ord(ch) for ch in str(seed or "")) % len(options)]
+
+
+def _fit_text(text: object, limit: int) -> str:
+    value = _compact_text(text)
+    if limit <= 0:
+        return ""
+    if len(value) <= limit:
+        return value
+
+    clipped = value[:limit].rstrip()
+    if " " in clipped:
+        clipped = clipped.rsplit(" ", 1)[0]
+    return clipped.rstrip(" ,;:-|") or value[:limit].rstrip(" ,;:-|")
+
+
+def _clean_case_for_fallback(item) -> str:
+    value = _compact_text(_strip_trend_text(_trend_input_text(item)))
+    value = re.sub(r"\s+review\s*:.*$", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s+review\b.*$", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s+recap\b.*$", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s+trailer\b.*$", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s+in\s+(?:a\s+)?new\s+series\b.*$", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s+-\s+[^-]{2,80}$", "", value).strip()
+    return _compact_text(value)
+
+
+def _topic_has_case_signal(text: object) -> bool:
+    norm = f" {_normalize(str(text or ''))} "
+    for term in LOCAL_FALLBACK_CASE_TERMS:
+        term_norm = _normalize(term)
+        if term_norm and f" {term_norm} " in norm:
+            return True
+    return False
+
+
+def _topic_looks_unusable_for_local_fallback(text: object) -> bool:
+    norm = _normalize(str(text or ""))
+    if not norm or norm.isdigit():
+        return True
+    if re.search(r"\b\d+\b.*\b(stories|cases|homicides|murders|killers)\b", norm):
+        return True
+    if norm.startswith(("why true crime", "does listening to true crime", "if you relax by watching")):
+        return True
+
+    has_case_signal = _topic_has_case_signal(norm)
+    reject_hit = any(_normalize(term) in norm for term in LOCAL_FALLBACK_REJECT_TERMS if _normalize(term))
+    if reject_hit and not has_case_signal:
+        return True
+    media_hit = any(
+        term in norm
+        for term in ("movie", "film", "tv show", "series", "episode", "hulu", "netflix", "review", "trailer", "recap")
+    )
+    strong_case_hit = any(
+        term in norm
+        for term in ("murder", "homicide", "slaying", "missing", "cold case", "killer", "dna", "suspect")
+    )
+    return media_hit and not strong_case_hit
+
+
+def _local_fallback_candidates(trends: list) -> list[dict]:
+    candidates: list[dict] = []
+    seen: set[str] = set()
+
+    for item in trends or []:
+        raw_topic = _compact_text(_trend_input_text(item))
+        case_name = _clean_case_for_fallback(item)
+        if _topic_looks_unusable_for_local_fallback(raw_topic) and not _topic_has_case_signal(case_name):
+            continue
+        if _topic_looks_unusable_for_local_fallback(case_name):
+            continue
+
+        norm = _normalize(case_name)
+        if not norm or norm in seen:
+            continue
+        seen.add(norm)
+
+        if isinstance(item, dict):
+            raw_title = _compact_text(item.get("source_title") or _trend_input_text(item))
+            source = _compact_text(item.get("source"))
+            angle = _compact_text(item.get("angle"))
+        else:
+            raw_title = _compact_text(_trend_input_text(item))
+            source = ""
+            angle = ""
+
+        candidates.append(
+            {
+                "case_name": case_name,
+                "source_title": raw_title,
+                "source": source,
+                "angle": angle,
+            }
+        )
+
+    return candidates
+
+
+def _case_label(case_name: str) -> str:
+    norm = _normalize(case_name)
+    if "cold case" in norm:
+        return "This cold case"
+    if "missing" in norm or "disappeared" in norm:
+        return "This missing person case"
+    if "dna" in norm:
+        return "This DNA case"
+    if any(term in norm for term in ("murder", "slaying", "homicide", "killed", "shooting")):
+        return "This homicide case"
+    return "This case"
+
+
+def _fallback_title(case_name: str, variant: int) -> str:
+    suffixes = [
+        "The Detail That Feels Off",
+        "The Timeline Feels Strange",
+        "The Quiet Question",
+        "One Detail Still Pulls",
+    ]
+    suffix = suffixes[variant % len(suffixes)]
+    base_limit = max(12, TITLE_MAX_CHARS - len(suffix) - 2)
+    base = _fit_text(case_name, base_limit)
+    return _fit_text(f"{base}: {suffix}" if base else suffix, TITLE_MAX_CHARS)
+
+
+def _fallback_hook(case_name: str, variant: int) -> str:
+    label = _case_label(case_name)
+    options = [
+        f"{label} has one detail that feels hard to ignore.",
+        f"{label} starts normally, then one detail changes everything.",
+        f"{label} sounds simple until the timeline gets quiet.",
+        f"{label} leaves one question sitting in the room.",
+    ]
+    return options[variant % len(options)]
+
+
+def _fallback_thumbnail_text(case_name: str, variant: int) -> str:
+    norm = _normalize(case_name)
+    if "dna" in norm:
+        text = "DNA QUESTION"
+    elif "cold case" in norm:
+        text = "COLD CASE CLUE"
+    elif "missing" in norm or "disappeared" in norm:
+        text = "MISSING TIMELINE"
+    elif "shooting" in norm:
+        text = "LAST KNOWN DETAIL"
+    else:
+        text = ["ONE DETAIL OFF", "QUIET CASE CLUE", "TIMELINE FEELS OFF"][variant % 3]
+
+    words = text.split()
+    if len(words) > THUMBNAIL_TEXT_MAX_WORDS:
+        text = " ".join(words[:THUMBNAIL_TEXT_MAX_WORDS])
+    return text
+
+
+def _fallback_music(case_name: str) -> str:
+    options = [
+        "quiet dark documentary tension",
+        "slow suspense mystery pulse",
+        "tense ambient case notes",
+        "minimal investigative piano drone",
+    ]
+    return _stable_choice(case_name, options)
+
+
+def _fallback_caption(case_name: str) -> str:
+    case_ref = _fit_text(case_name, 90)
+    caption = f"{case_ref}: the quiet detail is what makes this case stay with you. What did you notice?"
+    return _fit_text(caption, CAPTION_MAX_CHARS)
+
+
+def _fallback_hashtags(case_name: str) -> list[str]:
+    stop = CONCEPT_STOPWORDS | {"case", "cases", "crime", "true", "story", "mystery"}
+    tags: list[str] = []
+    seen: set[str] = set()
+
+    def add(tag: str) -> None:
+        clean = re.sub(r"[^A-Za-z0-9]", "", tag.lstrip("#"))
+        if not clean:
+            return
+        value = f"#{clean[:28]}"
+        norm = value.lower()
+        if norm in seen:
+            return
+        seen.add(norm)
+        tags.append(value)
+
+    for token in re.findall(r"[A-Za-z0-9]+", case_name):
+        token_norm = token.lower()
+        if len(token_norm) < 4 or token_norm in stop or token_norm.isdigit():
+            continue
+        add(token.title())
+
+    for tag in (
+        "TrueCrime",
+        "Mystery",
+        "CaseFiles",
+        "CrimeStory",
+        "ColdCase",
+        "UnsolvedMystery",
+        "DocumentaryShorts",
+        "YouTubeShorts",
+        "CrimeShorts",
+        "MysteryCase",
+        "CaseTheory",
+        "Investigation",
+    ):
+        add(tag)
+        if len(tags) >= max(HASHTAG_MIN_COUNT, 8):
+            break
+
+    return tags[:HASHTAG_MAX_COUNT]
+
+
+def _fallback_retention_triggers(case_name: str) -> list[str]:
+    case_ref = _fit_text(case_name, 70)
+    triggers = [
+        f"Specific case focus: {case_ref}",
+        "Opens with one unsettled detail",
+        "Moves through source-backed questions",
+        "Keeps a cautious friend-explaining tone",
+        "Ends by asking viewers what they noticed",
+        "Avoids graphic details while keeping tension",
+    ]
+    target = min(RETENTION_TRIGGER_MAX_COUNT, max(RETENTION_TRIGGER_MIN_COUNT, 3))
+    return triggers[:target]
+
+
+def _visual_subject(case_name: str) -> str:
+    value = _fit_text(case_name, 65)
+    value = re.sub(
+        r"\b(murdered|murder|slaying|homicide|killed|dead|body|corpse|stuffed|shooting)\b",
+        "case",
+        value,
+        flags=re.IGNORECASE,
+    )
+    value = re.sub(r"\bcase\s+case\b", "case", value, flags=re.IGNORECASE)
+    return _compact_text(value) or "a quiet unresolved case"
+
+
+def _fallback_images(case_name: str, count: int) -> list[str]:
+    subject = _visual_subject(case_name)
+    settings = [
+        "quiet residential street with distant porch lights",
+        "archive desk with maps notes and soft lamp light",
+        "empty roadside at blue hour with rain on asphalt",
+        "police station exterior seen from across the street",
+        "small town intersection with no visible faces",
+        "close view of a corkboard with blurred public clippings",
+        "dim hallway with an open doorway and untouched shadows",
+        "tabletop with a folded map and an old phone",
+        "wide exterior of a courthouse walkway at dusk",
+        "quiet family living room detail with a framed silhouette",
+    ]
+    actions = [
+        "camera drifting slowly toward the scene",
+        "papers being arranged by unseen hands",
+        "headlights passing in the far distance",
+        "wind moving loose papers near the entrance",
+        "streetlights flickering over an empty crosswalk",
+        "a marker pin being placed on the map",
+        "dust floating through a narrow beam of light",
+        "a notebook page turning in low light",
+        "rain reflecting across the walkway",
+        "curtains shifting beside a quiet window",
+    ]
+    times = ["night", "late evening", "blue hour", "early morning", "dusk"]
+    cues = ["slow dolly", "tracking shot", "handheld", "wide establishing", "close-up"]
+
+    images: list[str] = []
+    for i in range(count):
+        images.append(
+            "photorealistic documentary b-roll of "
+            f"{subject}, {settings[i % len(settings)]}, {times[i % len(times)]}, "
+            f"{actions[i % len(actions)]}, vertical 9:16 framing, {cues[i % len(cues)]}"
+        )
+    return images
+
+
+def _fallback_script(meta: dict, variant: int, count: int) -> list[str]:
+    case_name = meta["case_name"]
+    case_ref = _fit_text(case_name, 95)
+    source = meta.get("source") or ""
+    source_title = _fit_text(meta.get("source_title") or case_name, 115)
+    angle = _fit_text(meta.get("angle") or "", 110)
+    source_phrase = f"Public reporting from {source}" if source else "Public reporting"
+    focus = _stable_choice(
+        f"{case_name}{variant}",
+        ["the timeline", "the quiet gap", "the first reported detail", "the part people keep rereading"],
+    )
+    hook = _fallback_hook(case_name, variant)
+
+    line_four = (
+        f"The reported angle is careful but interesting: {angle}. That is worth holding as a question, not a rumor."
+        if angle
+        else f"The source headline frames it this way: {source_title}. I would treat that as the doorway, not the whole story."
+    )
+    final_options = [
+        "Guys, what detail would you check again before this story gets buried in comments?",
+        "Guys, what theory makes the most sense after hearing this case?",
+        "Guys, what did you notice that the headline makes too easy to miss?",
+        "Guys, which clue would you want explained before this case feels settled?",
+    ]
+
+    body = [
+        f"{hook} It centers on {case_ref}.",
+        f"{source_phrase} puts the story in front of us, but {focus} is what makes it hard to shake.",
+        "The safer way to hear it is slowly: who was there, what changed, and which part never fully settled.",
+        line_four,
+        "This does not need a loud voice. The confirmed pieces are already heavy enough.",
+        "I keep coming back to the ordinary things: a route, a room, a delay, and someone who may remember more.",
+        "When answers take years, one small memory can matter more than the biggest headline.",
+        "The uncomfortable part is how normal everything can look right before a case turns strange.",
+        "So the real tension is not gore or shock; it is the gap between what is known and what still feels missing.",
+    ]
+
+    final_line = final_options[variant % len(final_options)]
+    if count <= 1:
+        return [final_line]
+    return body[: count - 1] + [final_line]
+
+
+def _build_local_fallback_item(meta: dict, variant: int) -> dict:
+    case_name = meta["case_name"]
+    scene_count = min(MAX_SCENES, max(MIN_SCENES, 8))
+    script = _fallback_script(meta, variant, scene_count)
+    return {
+        "title": _fallback_title(case_name, variant),
+        "hook": _fallback_hook(case_name, variant),
+        "script": script,
+        "image": _fallback_images(case_name, len(script)),
+        "caption": _fallback_caption(case_name),
+        "thumbnail_text": _fallback_thumbnail_text(case_name, variant),
+        "hashtags": _fallback_hashtags(case_name),
+        "retention_triggers": _fallback_retention_triggers(case_name),
+        "trend": case_name,
+        "background_music": _fallback_music(case_name),
+    }
+
+
+def _api_failure_should_use_local_fallback(error_text: object) -> bool:
+    text = str(error_text or "").lower()
+    return any(
+        marker in text
+        for marker in (
+            "429",
+            "rate limit",
+            "too many requests",
+            "402",
+            "403",
+            "500",
+            "502",
+            "503",
+            "504",
+            "gateway",
+            "upstream",
+            "bad_response_status_code",
+            "invalid model",
+            "no access",
+        )
+    )
+
+
+def _build_local_fallback_content(
+    trends: list,
+    comparison_data: list[dict],
+    channel_titles: list[str],
+    reason: str,
+) -> dict:
+    if not LOCAL_FALLBACK_ENABLED:
+        return {}
+
+    candidates = _local_fallback_candidates(trends)
+    if not candidates:
+        print("Local content fallback skipped: no source-specific case-like trend was available.")
+        return {}
+
+    if reason:
+        print(f"Using local dynamic content fallback because the JSON API failed: {_fit_text(reason, 180)}")
+    else:
+        print("Using local dynamic content fallback after invalid JSON responses.")
+
+    last_reason = ""
+    for meta in candidates:
+        for variant in range(4):
+            data = _build_local_fallback_item(meta, variant)
+            if not is_valid(data):
+                last_reason = "local fallback did not satisfy content schema"
+                continue
+            ok, validation_reason = _validate_no_repeats(data, comparison_data, channel_titles)
+            if ok:
+                print(f"Local fallback selected trend: {data['trend']}")
+                return data
+            last_reason = validation_reason
+
+    print(f"Local content fallback failed validation: {last_reason}")
+    return {}
+
+
 def _load_json_list(path: Path, label: str) -> list[dict]:
     if not path.exists():
         return []
@@ -1146,13 +1578,17 @@ def _run_completion(
 
 def contents(trends):
     load_dotenv()
-    if not CONTENT_API_KEY:
+    if not CONTENT_API_KEY and not LOCAL_FALLBACK_ENABLED:
         raise RuntimeError("No JSON prompt API key found. Set JSON_API_KEY, BLUESMINDS_API_KEY, or NVIDIA_API_KEY.")
-    client = OpenAI(
-        base_url=CONTENT_BASE_URL,
-        api_key=CONTENT_API_KEY,
-    )
-    print(f"Content JSON prompts using {json_provider_name(CONTENT_BASE_URL)} model {CONTENT_MODEL}.")
+    client = None
+    if CONTENT_API_KEY:
+        client = OpenAI(
+            base_url=CONTENT_BASE_URL,
+            api_key=CONTENT_API_KEY,
+        )
+        print(f"Content JSON prompts using {json_provider_name(CONTENT_BASE_URL)} model {CONTENT_MODEL}.")
+    else:
+        print("No JSON prompt API key found. Local dynamic content fallback is enabled.")
     file_data = _load_json_list(OUTPUT_JSON, "Output JSON")
     history_data = _load_generation_history()
     comparison_data = history_data + file_data
@@ -1174,45 +1610,63 @@ def contents(trends):
     max_attempts = int(os.getenv("CONTENT_MAX_ATTEMPTS", "3"))
     prompt = _build_prompt(trends, repeated, channel_titles)
     retry_reason = ""
-    for attempt in range(1, max_attempts + 1):
-        attempt_prompt = prompt
-        if retry_reason:
-            attempt_prompt = (
-                f"{prompt} Previous attempt failed validation: {retry_reason} "
-                "Generate a completely different case, title, and script."
-            )
-        try:
-            s = _run_completion(
-                client,
-                attempt_prompt,
-                enable_thinking=ENABLE_THINKING,
-                stream=STREAM_OUTPUT,
-                stop=["\n[Reasoning]", "\nReasoning:", "\n[Analysis]", "\nAnalysis:"],
-            )
-        except Exception as exc:
-            print(f"\ncontent request failed: {exc}\n")
-            s = ""
+    api_failure_reason = ""
+    data = None
 
-        if s:
-            s = _strip_reasoning_lines(s)
-            if _contains_reasoning(s) or _looks_glitched(s):
-                print("\nReasoning leak or glitch detected. Retrying with strict JSON mode.\n")
+    if client is not None:
+        for attempt in range(1, max_attempts + 1):
+            attempt_prompt = prompt
+            if retry_reason:
+                attempt_prompt = (
+                    f"{prompt} Previous attempt failed validation: {retry_reason} "
+                    "Generate a completely different case, title, and script."
+                )
+            try:
+                s = _run_completion(
+                    client,
+                    attempt_prompt,
+                    enable_thinking=ENABLE_THINKING,
+                    stream=STREAM_OUTPUT,
+                    stop=["\n[Reasoning]", "\nReasoning:", "\n[Analysis]", "\nAnalysis:"],
+                )
+            except Exception as exc:
+                api_failure_reason = str(exc)
+                print(f"\ncontent request failed: {exc}\n")
+                if _api_failure_should_use_local_fallback(api_failure_reason):
+                    print("Content API is unavailable or rate-limited; switching to local fallback.")
+                    break
                 s = ""
 
-        if not s:
-            print(f"\nempty response, retrying ({attempt}/{max_attempts})...\n")
-            continue
-        data = extract_json(s, trends)
-        if data and is_valid(data):
-            ok, reason = _validate_no_repeats(data, comparison_data, channel_titles)
-            if not ok:
-                retry_reason = reason
-                print(f"\nretrying ({attempt}/{max_attempts})... {reason}\n")
+            if s:
+                s = _strip_reasoning_lines(s)
+                if _contains_reasoning(s) or _looks_glitched(s):
+                    print("\nReasoning leak or glitch detected. Retrying with strict JSON mode.\n")
+                    s = ""
+
+            if not s:
+                print(f"\nempty response, retrying ({attempt}/{max_attempts})...\n")
                 continue
-            break
-        print(f"\nretrying ({attempt}/{max_attempts})...\n")
-    else:
+            parsed = extract_json(s, trends)
+            if parsed and is_valid(parsed):
+                ok, reason = _validate_no_repeats(parsed, comparison_data, channel_titles)
+                if not ok:
+                    retry_reason = reason
+                    print(f"\nretrying ({attempt}/{max_attempts})... {reason}\n")
+                    continue
+                data = parsed
+                break
+            print(f"\nretrying ({attempt}/{max_attempts})...\n")
+
+    if data is None:
+        data = _build_local_fallback_content(
+            trends,
+            comparison_data,
+            channel_titles,
+            api_failure_reason or retry_reason,
+        )
+    if not data:
         raise RuntimeError("Failed to get valid JSON after 3 attempts.")
+
     file_data.append(data)
     with OUTPUT_JSON.open("w", encoding="utf-8") as f:
         json.dump(file_data, f, indent=2, ensure_ascii=False)

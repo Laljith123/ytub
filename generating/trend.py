@@ -390,6 +390,32 @@ HISTORY_JSON = Path(os.getenv("HISTORY_JSON_PATH", str(PROJECT_ROOT / "generatin
 COLLISION_SIM_THRESHOLD = _env_float("TRENDS_COLLISION_SIM", "0.72")
 USED_PROMPT_LIMIT = _env_int("TRENDS_USED_PROMPT_LIMIT", "120")
 AI_REQUIRE_SOURCE_MATCH = _env_bool("TRENDS_AI_REQUIRE_SOURCE_MATCH", "1")
+FALLBACK_REJECT_TERMS = tuple(
+    term.strip().lower()
+    for term in re.split(
+        r"[|,]",
+        os.getenv(
+            "TRENDS_FALLBACK_REJECT_TERMS",
+            "movie|movies|film|films|tv show|series|episode|episodes|hulu|netflix|"
+            "trailer|review|reviews|recap|podcast|podcasting|psychologist|psychology|"
+            "study|culture|christians|discourse|warning|poses the question",
+        ),
+    )
+    if term.strip()
+)
+FALLBACK_CASE_TERMS = tuple(
+    term.strip().lower()
+    for term in re.split(
+        r"[|,]",
+        os.getenv(
+            "TRENDS_FALLBACK_CASE_TERMS",
+            "case|cold case|murder|murdered|missing|slaying|homicide|killer|killed|"
+            "shooting|death|dead|dna|suspect|victim|unsolved|disappeared|abduction|"
+            "drive by|found|police|family",
+        ),
+    )
+    if term.strip()
+)
 
 
 
@@ -506,6 +532,39 @@ def _content_trend_text(text: str) -> str:
     if not value or value.isdigit():
         return ""
     return value
+
+
+def _candidate_has_case_signal(text: object) -> bool:
+    norm = f" {_normalize(str(text or ''))} "
+    for term in FALLBACK_CASE_TERMS:
+        term_norm = _normalize(term)
+        if term_norm and f" {term_norm} " in norm:
+            return True
+    return False
+
+
+def _candidate_looks_unusable_for_fallback(text: object) -> bool:
+    norm = _normalize(str(text or ""))
+    if not norm or norm.isdigit():
+        return True
+    if re.search(r"\b\d+\b.*\b(stories|cases|homicides|murders|killers)\b", norm):
+        return True
+    if norm.startswith(("why true crime", "does listening to true crime", "if you relax by watching")):
+        return True
+
+    has_case_signal = _candidate_has_case_signal(norm)
+    reject_hit = any(_normalize(term) in norm for term in FALLBACK_REJECT_TERMS if _normalize(term))
+    if reject_hit and not has_case_signal:
+        return True
+    media_hit = any(
+        term in norm
+        for term in ("movie", "film", "tv show", "series", "episode", "hulu", "netflix", "review", "trailer", "recap")
+    )
+    strong_case_hit = any(
+        term in norm
+        for term in ("murder", "homicide", "slaying", "missing", "cold case", "killer", "dna", "suspect")
+    )
+    return media_hit and not strong_case_hit
 
 
 def _token_set(text: str) -> set[str]:
@@ -870,6 +929,15 @@ def _validate_selected(items: list[dict], candidates: list[dict], used_topics: l
 def _fallback_selected(candidates: list[dict], used_topics: list[str]) -> list[dict]:
     selected: list[dict] = []
     seen: set[str] = set()
+    case_like_candidates = [
+        item
+        for item in candidates
+        if not _candidate_looks_unusable_for_fallback(_content_trend_text(str(item.get("title") or "")))
+    ]
+    if case_like_candidates:
+        candidates = case_like_candidates
+    else:
+        print("Fallback selection found no clearly case-like candidates; using raw candidates as a last resort.")
 
     for item in candidates:
         title = _content_trend_text(str(item.get("title") or ""))

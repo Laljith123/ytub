@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import re
@@ -32,11 +33,17 @@ CHUNKS_DIR = OUTPUT_DIR / "chunks"
 OUTPUT_JSON = Path(os.getenv("OUTPUT_JSON_PATH", str(PROJECT_ROOT / "output.json")))
 FINAL_WAV = OUTPUT_DIR / "final.wav"
 
-VOICE_SPEED = float(os.getenv("VOICE_SPEED", "0.94"))
+TTS_BACKEND = os.getenv("TTS_BACKEND", "edge").strip().lower()
+VOICE_SPEED = float(os.getenv("VOICE_SPEED", "1.0"))
 VOICE_GAIN_DB = float(os.getenv("VOICE_GAIN_DB", "0"))
 VOICE_CROSSFADE_MS = int(os.getenv("VOICE_CROSSFADE_MS", "60"))
 VOICE_DEFAULT_PAUSE_MS = int(os.getenv("VOICE_DEFAULT_PAUSE_MS", "260"))
 VOICE_FINAL_PAUSE_MS = int(os.getenv("VOICE_FINAL_PAUSE_MS", "420"))
+
+EDGE_TTS_VOICE = os.getenv("EDGE_TTS_VOICE", "en-US-GuyNeural")
+EDGE_TTS_RATE = os.getenv("EDGE_TTS_RATE", "-10%")
+EDGE_TTS_VOLUME = os.getenv("EDGE_TTS_VOLUME", "+0%")
+EDGE_TTS_PITCH = os.getenv("EDGE_TTS_PITCH", "-2Hz")
 
 RIVA_VOICE = os.getenv("RIVA_VOICE", "English-US-RadTTS.Female-1")
 RIVA_LANGUAGE = os.getenv("RIVA_LANGUAGE", "en-US")
@@ -296,7 +303,7 @@ def _build_voice_plan_prompt(video_data: dict, chunks: list[str]) -> str:
     context = _video_context(video_data, chunks)
     return (
         "You are a professional voice director for short-form true-crime narration. "
-        "Create ONLY an in-memory voice direction plan for NVIDIA Riva text-to-speech. "
+        "Create ONLY an in-memory voice direction plan for text-to-speech narration. "
         "Do NOT rewrite, paraphrase, summarize, translate, censor, or add new narration. "
         "Do NOT add slang to the script. Use respectful suspense, not comedy. "
         "Direct it like a friend quietly explaining something suspicious, not like a news anchor. "
@@ -507,8 +514,36 @@ def generate_riva(chunk: str, path: Path):
     temp_raw.unlink(missing_ok=True)
 
 
+async def _generate_edge_async(chunk: str, path: Path) -> None:
+    import edge_tts
+
+    temp_path = path.with_suffix(".edge.mp3")
+    communicate = edge_tts.Communicate(
+        text=chunk,
+        voice=EDGE_TTS_VOICE,
+        rate=EDGE_TTS_RATE,
+        volume=EDGE_TTS_VOLUME,
+        pitch=EDGE_TTS_PITCH,
+    )
+    await communicate.save(str(temp_path))
+
+    audio = AudioSegment.from_file(str(temp_path))
+    audio.export(str(path), format="wav")
+    temp_path.unlink(missing_ok=True)
+
+
+def generate_edge(chunk: str, path: Path) -> None:
+    asyncio.run(_generate_edge_async(chunk, path))
+
+
 def generate_voice_chunk(chunk: str, path: Path):
-    generate_riva(chunk, path)
+    if TTS_BACKEND in {"edge", "edge-tts", "edgetts"}:
+        generate_edge(chunk, path)
+        return
+    if TTS_BACKEND == "riva":
+        generate_riva(chunk, path)
+        return
+    raise RuntimeError(f"Unsupported TTS_BACKEND: {TTS_BACKEND}")
 
 
 def _trim_silence(audio: AudioSegment) -> AudioSegment:
@@ -585,7 +620,7 @@ for i, scene in enumerate(voice_plan):
     speed = VOICE_SPEED * float(scene.get("speed_multiplier", 1.0))
 
     print(
-        f"Generating Riva voice chunk {i + 1}/{len(voice_plan)}: "
+        f"Generating {TTS_BACKEND} voice chunk {i + 1}/{len(voice_plan)}: "
         f"{str(scene.get('emotion', ''))} | {chunk[:80]}"
     )
 

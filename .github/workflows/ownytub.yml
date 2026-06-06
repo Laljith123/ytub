@@ -84,7 +84,12 @@ jobs:
           JSON_MODEL_DISCOVERY_ENABLED: "1"
           JSON_MODEL_CANDIDATES: "gpt-4o,gpt-5-chat,grok-4.20-0309-non-reasoning,openai/gpt-4o-mini,gpt-4o-mini"
           JSON_EXTRA_BODY_ENABLED: ${{ vars.JSON_EXTRA_BODY_ENABLED }}
-          VOICE: "RIVA"
+          VOICE: "EDGE"
+          TTS_BACKEND: "edge"
+          EDGE_TTS_VOICE: "en-US-GuyNeural"
+          EDGE_TTS_RATE: "-10%"
+          EDGE_TTS_VOLUME: "+0%"
+          EDGE_TTS_PITCH: "-2Hz"
           RIVA_VOICE: "English-US-RadTTS.Female-1"
           RIVA_LANGUAGE: "en-US"
           YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN_JSON }}
@@ -112,7 +117,7 @@ jobs:
           SUBTITLE_RES_X: "1080"
           SUBTITLE_RES_Y: "1920"
           SUBTITLE_POS_Y: "960"
-          VOICE_SPEED: "0.94"
+          VOICE_SPEED: "1.0"
           VOICE_GAIN_DB: "0"
           VOICE_CROSSFADE_MS: "60"
           VOICE_DEFAULT_PAUSE_MS: "260"

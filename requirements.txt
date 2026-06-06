@@ -10,3 +10,4 @@ google-auth-oauthlib
 nvidia-riva-client
 grpcio
 protobuf
+edge-tts

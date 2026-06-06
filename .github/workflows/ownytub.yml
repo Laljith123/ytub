@@ -80,7 +80,7 @@ jobs:
           BLUESMINDS_API_KEY: ${{ secrets.BLUESMINDS_API_KEY }}
           JSON_API_KEY: ${{ secrets.JSON_API_KEY }}
           JSON_BASE_URL: ${{ vars.JSON_BASE_URL }}
-          JSON_MODEL: ${{ vars.JSON_MODEL }}
+          JSON_MODEL: "grok-4.20-0309-non-reasoning"
           JSON_EXTRA_BODY_ENABLED: ${{ vars.JSON_EXTRA_BODY_ENABLED }}
           VOICE: "CHATTERBOX"
           RIVA_VOICE: "Chatterbox-Multilingual.en-US.Male"

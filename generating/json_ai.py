@@ -7,7 +7,7 @@ from openai import OpenAI
 BLUESMINDS_BASE_URL = "https://api.bluesminds.com/v1"
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 NVIDIA_DEFAULT_MODEL = "openai/gpt-oss-120b"
-BLUESMINDS_DEFAULT_MODEL = "grok-latest"
+BLUESMINDS_DEFAULT_MODEL = "grok-4.20-0309-non-reasoning"
 
 
 def env_value(*names: str, default: str = "") -> str:

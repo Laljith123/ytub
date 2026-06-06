@@ -9,6 +9,7 @@ from typing import Any
 from json_ai import (
     json_api_key,
     json_base_url,
+    json_create_chat_completion,
     json_completion_text,
     json_extra_body,
     json_model,
@@ -54,7 +55,7 @@ TITLE_FILE = OUTPUT_DIR / "thumbnail_title.txt"
 
 THUMBNAIL_PLAN_ENABLED = os.getenv("THUMBNAIL_PLAN_ENABLED", "1") == "1"
 THUMBNAIL_PLAN_BASE_URL = json_base_url("THUMBNAIL_PLAN_BASE_URL")
-THUMBNAIL_PLAN_API_KEY = json_api_key("THUMBNAIL_PLAN_API_KEY")
+THUMBNAIL_PLAN_API_KEY = json_api_key("THUMBNAIL_PLAN_API_KEY", base_url=THUMBNAIL_PLAN_BASE_URL)
 THUMBNAIL_PLAN_MODEL = resolve_json_model(
     json_model("THUMBNAIL_PLAN_MODEL"),
     THUMBNAIL_PLAN_BASE_URL,
@@ -284,9 +285,6 @@ def _build_thumbnail_prompt(item: dict[str, Any]) -> str:
 
 
 def _run_thumbnail_completion(prompt: str) -> str:
-    from openai import OpenAI
-
-    client = OpenAI(base_url=THUMBNAIL_PLAN_BASE_URL, api_key=THUMBNAIL_PLAN_API_KEY)
     request = {
         "model": THUMBNAIL_PLAN_MODEL,
         "messages": [
@@ -312,7 +310,7 @@ def _run_thumbnail_completion(prompt: str) -> str:
     )
     if extra_body:
         request["extra_body"] = extra_body
-    completion = client.chat.completions.create(**request)
+    completion = json_create_chat_completion(THUMBNAIL_PLAN_BASE_URL, THUMBNAIL_PLAN_API_KEY, request)
     return json_completion_text(completion)
 
 

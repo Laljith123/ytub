@@ -1,3 +1,4 @@
+import atexit
 import os
 from typing import Any
 
@@ -8,6 +9,7 @@ from openai import OpenAI
 BLUESMINDS_BASE_URL = "https://api.bluesminds.com/v1"
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 CHATGPT_FREE_BASE_URL = "https://chatgpt-api.shn.hk/v1"
+PUTER_CHAT_BASE_URL = "puter://chat"
 NO_AUTH_API_KEY = "no-auth-required"
 NVIDIA_DEFAULT_MODEL = "openai/gpt-oss-120b"
 BLUESMINDS_DEFAULT_MODEL = "gpt-4o"
@@ -15,6 +17,10 @@ BLUESMINDS_MODEL_CANDIDATES = (
     "gpt-4o,gpt-5-chat,grok-4.20-0309-non-reasoning,openai/gpt-4o-mini,gpt-4o-mini"
 )
 _MODEL_CACHE: dict[tuple[str, str], set[str]] = {}
+_PUTER_PLAYWRIGHT = None
+_PUTER_BROWSER = None
+_PUTER_CONTEXT = None
+_PUTER_PAGE = None
 
 
 def env_value(*names: str, default: str = "") -> str:
@@ -29,8 +35,14 @@ def has_bluesminds_key() -> bool:
     return bool(env_value("BLUESMINDS_API_KEY"))
 
 
+def provider_uses_puter_chat(base_url: str) -> bool:
+    normalized = str(base_url or "").strip().lower().rstrip("/")
+    return normalized in {"puter", "puter://chat", "puter://ai/chat", "https://js.puter.com/v2"}
+
+
 def provider_allows_no_auth(base_url: str) -> bool:
-    return "chatgpt-api.shn.hk" in str(base_url or "").lower()
+    normalized = str(base_url or "").lower()
+    return "chatgpt-api.shn.hk" in normalized or provider_uses_puter_chat(normalized)
 
 
 def json_api_key(specific_env: str = "", base_url: str = "") -> str:
@@ -81,6 +93,8 @@ def json_provider_name(base_url: str) -> str:
         return "Bluesminds"
     if "integrate.api.nvidia.com" in normalized:
         return "NVIDIA"
+    if provider_uses_puter_chat(normalized):
+        return "Puter.js Chat"
     if provider_allows_no_auth(normalized):
         return "ChatGPT API Free"
     return "OpenAI-compatible"
@@ -111,7 +125,7 @@ def _model_id(item: Any) -> str:
 
 
 def _load_available_models(base_url: str, api_key: str) -> set[str]:
-    if not base_url or not api_key:
+    if not base_url or not api_key or provider_uses_puter_chat(base_url):
         return set()
     cache_key = (base_url.rstrip("/"), api_key[:10])
     if cache_key in _MODEL_CACHE:
@@ -187,6 +201,192 @@ def json_extra_body(base_url: str, enable_thinking: bool, reasoning_budget: int)
     return None
 
 
+def _close_puter_chat_browser() -> None:
+    global _PUTER_PLAYWRIGHT, _PUTER_BROWSER, _PUTER_CONTEXT, _PUTER_PAGE
+
+    for item in (_PUTER_PAGE, _PUTER_CONTEXT, _PUTER_BROWSER):
+        try:
+            if item is not None:
+                item.close()
+        except Exception:
+            pass
+
+    try:
+        if _PUTER_PLAYWRIGHT is not None:
+            _PUTER_PLAYWRIGHT.stop()
+    except Exception:
+        pass
+
+    _PUTER_PLAYWRIGHT = None
+    _PUTER_BROWSER = None
+    _PUTER_CONTEXT = None
+    _PUTER_PAGE = None
+
+
+atexit.register(_close_puter_chat_browser)
+
+
+def _puter_chat_page():
+    global _PUTER_PLAYWRIGHT, _PUTER_BROWSER, _PUTER_CONTEXT, _PUTER_PAGE
+
+    if _PUTER_PAGE is not None:
+        try:
+            if not _PUTER_PAGE.is_closed():
+                return _PUTER_PAGE
+        except Exception:
+            _close_puter_chat_browser()
+
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        raise RuntimeError(
+            "Playwright is required for Puter chat. "
+            "Run 'pip install playwright' and 'python -m playwright install chromium'."
+        ) from exc
+
+    timeout_ms = int(float(env_value("PUTER_CHAT_TIMEOUT_MS", default="180000")))
+    _PUTER_PLAYWRIGHT = sync_playwright().start()
+    _PUTER_BROWSER = _PUTER_PLAYWRIGHT.chromium.launch(
+        headless=True,
+        args=["--no-sandbox", "--disable-dev-shm-usage"],
+    )
+    _PUTER_CONTEXT = _PUTER_BROWSER.new_context()
+    _PUTER_PAGE = _PUTER_CONTEXT.new_page()
+    _PUTER_PAGE.set_default_timeout(timeout_ms)
+    _PUTER_PAGE.set_content(
+        """
+        <html>
+        <body>
+            <script src="https://js.puter.com/v2/"></script>
+        </body>
+        </html>
+        """,
+        wait_until="domcontentloaded",
+    )
+    _PUTER_PAGE.wait_for_function(
+        "() => window.puter && puter.ai && puter.ai.chat",
+        timeout=timeout_ms,
+    )
+    return _PUTER_PAGE
+
+
+def _message_content_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                parts.append(str(item.get("text") or item.get("content") or ""))
+            else:
+                parts.append(str(item))
+        return "\n".join(part for part in parts if part)
+    return str(content or "")
+
+
+def _puter_messages(messages: Any) -> list[dict[str, str]]:
+    if not isinstance(messages, list):
+        return [{"role": "user", "content": str(messages or "")}]
+
+    cleaned: list[dict[str, str]] = []
+    for item in messages:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "user").strip().lower()
+        if role not in {"system", "user", "assistant"}:
+            role = "user"
+        content = _message_content_text(item.get("content"))
+        if content:
+            cleaned.append({"role": role, "content": content})
+    return cleaned or [{"role": "user", "content": ""}]
+
+
+def _puter_options(request: dict[str, Any]) -> dict[str, Any]:
+    options: dict[str, Any] = {
+        "model": str(request.get("model") or env_value("PUTER_CHAT_MODEL", default="claude-sonnet-4.5")),
+        "stream": bool(request.get("stream")),
+    }
+    for key in ("max_tokens", "temperature"):
+        value = request.get(key)
+        if value is not None:
+            options[key] = value
+    reasoning_effort = env_value("PUTER_CHAT_REASONING_EFFORT")
+    if reasoning_effort:
+        options["reasoning_effort"] = reasoning_effort
+    text_verbosity = env_value("PUTER_CHAT_TEXT_VERBOSITY")
+    if text_verbosity:
+        options["text_verbosity"] = text_verbosity
+    return options
+
+
+def _puter_chat_completion(request: dict[str, Any]) -> dict[str, Any]:
+    page = _puter_chat_page()
+    timeout_ms = int(float(env_value("PUTER_CHAT_TIMEOUT_MS", default="180000")))
+    result = page.evaluate(
+        """
+        async ({ messages, options, timeoutMs }) => {
+            const textFromContent = (content) => {
+                if (!content) return "";
+                if (typeof content === "string") return content;
+                if (Array.isArray(content)) {
+                    return content.map((part) => {
+                        if (!part) return "";
+                        if (typeof part === "string") return part;
+                        return part.text || part.content || "";
+                    }).filter(Boolean).join("\\n");
+                }
+                return String(content);
+            };
+
+            const textFromResponse = (response) => {
+                if (!response) return "";
+                if (typeof response === "string") return response;
+                if (response.text) return response.text;
+                if (response.message) return textFromContent(response.message.content || response.message);
+                if (response.choices && response.choices[0]) {
+                    const choice = response.choices[0];
+                    if (choice.message) return textFromContent(choice.message.content || choice.message);
+                    if (choice.text) return choice.text;
+                }
+                return String(response);
+            };
+
+            const collect = async () => {
+                const response = await puter.ai.chat(messages, options);
+                if (options.stream && response && response[Symbol.asyncIterator]) {
+                    let text = "";
+                    for await (const part of response) {
+                        text += textFromResponse(part);
+                    }
+                    return text;
+                }
+                return textFromResponse(response);
+            };
+
+            const timeout = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error("Puter chat timed out")), timeoutMs);
+            });
+            return Promise.race([collect(), timeout]);
+        }
+        """,
+        {
+            "messages": _puter_messages(request.get("messages")),
+            "options": _puter_options(request),
+            "timeoutMs": timeout_ms,
+        },
+    )
+    return {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": str(result or ""),
+                }
+            }
+        ]
+    }
+
+
 def _chat_completions_endpoint(base_url: str) -> str:
     if provider_allows_no_auth(base_url):
         return f"{str(base_url).rstrip('/')}/"
@@ -194,6 +394,9 @@ def _chat_completions_endpoint(base_url: str) -> str:
 
 
 def json_create_chat_completion(base_url: str, api_key: str, request: dict[str, Any]) -> Any:
+    if provider_uses_puter_chat(base_url):
+        return _puter_chat_completion(request)
+
     if provider_allows_no_auth(base_url):
         body = {key: value for key, value in request.items() if value is not None}
         if body.get("stream"):

@@ -15,6 +15,7 @@ from pydub.silence import detect_nonsilent
 from json_ai import (
     json_api_key,
     json_base_url,
+    json_create_chat_completion,
     json_completion_text,
     json_extra_body,
     json_model,
@@ -103,7 +104,7 @@ NVIDIA_API_KEY = _clean_api_key(os.getenv("NVIDIA_API_KEY"))
 
 VOICE_PLAN_ENABLED = os.getenv("VOICE_PLAN_ENABLED", "1") == "1"
 VOICE_PLAN_BASE_URL = json_base_url("VOICE_PLAN_BASE_URL")
-VOICE_PLAN_API_KEY = json_api_key("VOICE_PLAN_API_KEY")
+VOICE_PLAN_API_KEY = json_api_key("VOICE_PLAN_API_KEY", base_url=VOICE_PLAN_BASE_URL)
 VOICE_PLAN_MODEL = resolve_json_model(json_model("VOICE_PLAN_MODEL"), VOICE_PLAN_BASE_URL, VOICE_PLAN_API_KEY)
 VOICE_PLAN_MAX_ATTEMPTS = int(os.getenv("VOICE_PLAN_MAX_ATTEMPTS", "3"))
 VOICE_PLAN_MAX_TOKENS = int(os.getenv("VOICE_PLAN_MAX_TOKENS", "4096"))
@@ -397,13 +398,6 @@ def _run_voice_plan_completion(prompt: str) -> str:
     if not VOICE_PLAN_API_KEY:
         raise RuntimeError("No JSON prompt API key found for voice planning.")
 
-    from openai import OpenAI
-
-    client = OpenAI(
-        base_url=VOICE_PLAN_BASE_URL,
-        api_key=VOICE_PLAN_API_KEY,
-    )
-
     request = {
         "model": VOICE_PLAN_MODEL,
         "messages": [
@@ -425,7 +419,7 @@ def _run_voice_plan_completion(prompt: str) -> str:
     extra_body = json_extra_body(VOICE_PLAN_BASE_URL, VOICE_PLAN_ENABLE_THINKING, VOICE_PLAN_REASONING_BUDGET)
     if extra_body:
         request["extra_body"] = extra_body
-    completion = client.chat.completions.create(**request)
+    completion = json_create_chat_completion(VOICE_PLAN_BASE_URL, VOICE_PLAN_API_KEY, request)
 
     return json_completion_text(completion)
 

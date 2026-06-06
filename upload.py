@@ -14,11 +14,11 @@ from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
-from openai import OpenAI
 
 from generating.json_ai import (
     json_api_key,
     json_base_url,
+    json_create_chat_completion,
     json_completion_text,
     json_extra_body,
     json_model,
@@ -82,7 +82,7 @@ TOKEN_JSON = os.getenv("YOUTUBE_TOKEN_JSON", "")
 
 METADATA_AI_ENABLED = os.getenv("YOUTUBE_METADATA_AI_ENABLED", "1") == "1"
 METADATA_BASE_URL = json_base_url("YOUTUBE_METADATA_BASE_URL")
-METADATA_API_KEY = json_api_key("YOUTUBE_METADATA_API_KEY")
+METADATA_API_KEY = json_api_key("YOUTUBE_METADATA_API_KEY", base_url=METADATA_BASE_URL)
 METADATA_MODEL = resolve_json_model(json_model("YOUTUBE_METADATA_MODEL"), METADATA_BASE_URL, METADATA_API_KEY)
 METADATA_MAX_ATTEMPTS = int(os.getenv("YOUTUBE_METADATA_MAX_ATTEMPTS", "3"))
 METADATA_MAX_TOKENS = int(os.getenv("YOUTUBE_METADATA_MAX_TOKENS", "4096"))
@@ -98,13 +98,6 @@ METADATA_TAG_CHAR_LIMIT = int(os.getenv("YOUTUBE_METADATA_TAG_CHAR_LIMIT", "450"
 METADATA_HASHTAG_MIN_COUNT = int(os.getenv("YOUTUBE_METADATA_HASHTAG_MIN_COUNT", "8"))
 METADATA_HASHTAG_MAX_COUNT = int(os.getenv("YOUTUBE_METADATA_HASHTAG_MAX_COUNT", "15"))
 METADATA_USE_CONTENT_HASHTAGS = os.getenv("YOUTUBE_METADATA_USE_CONTENT_HASHTAGS", "1") == "1"
-
-_metadata_client = None
-if METADATA_API_KEY:
-    _metadata_client = OpenAI(
-        base_url=METADATA_BASE_URL,
-        api_key=METADATA_API_KEY,
-    )
 
 
 def _safe_log_text(value: object) -> str:
@@ -477,7 +470,7 @@ def _build_metadata_prompt(latest: dict, fallback_title: str, fallback_descripti
 def generate_metadata_plan(latest: dict, fallback_title: str, fallback_description: str) -> dict:
     if not METADATA_AI_ENABLED:
         return {}
-    if _metadata_client is None:
+    if not METADATA_API_KEY:
         print("[Metadata] No JSON prompt API key set - using local defaults.")
         return {}
 
@@ -511,7 +504,7 @@ def generate_metadata_plan(latest: dict, fallback_title: str, fallback_descripti
             extra_body = json_extra_body(METADATA_BASE_URL, METADATA_ENABLE_THINKING, METADATA_REASONING_BUDGET)
             if extra_body:
                 request["extra_body"] = extra_body
-            completion = _metadata_client.chat.completions.create(**request)
+            completion = json_create_chat_completion(METADATA_BASE_URL, METADATA_API_KEY, request)
             raw_output = json_completion_text(completion)
             raw_output = _strip_reasoning_lines(raw_output)
             plan = _parse_json_object(raw_output)
@@ -537,7 +530,7 @@ def generate_metadata_plan(latest: dict, fallback_title: str, fallback_descripti
 
 
 def generate_hashtags(title: str, description: str, max_retries: int = 3) -> tuple[str, str]:
-    if _metadata_client is None:
+    if not METADATA_API_KEY:
         print("[Hashtags] No JSON prompt API key set - using default hashtags.")
         return POPULAR_HASHTAGS, ""
 
@@ -593,7 +586,7 @@ def generate_hashtags(title: str, description: str, max_retries: int = 3) -> tup
             extra_body = json_extra_body(METADATA_BASE_URL, enable_thinking, reasoning_budget)
             if extra_body:
                 request["extra_body"] = extra_body
-            completion = _metadata_client.chat.completions.create(**request)
+            completion = json_create_chat_completion(METADATA_BASE_URL, METADATA_API_KEY, request)
 
             raw_output = json_completion_text(completion)
             raw_output = _strip_reasoning_lines(raw_output)

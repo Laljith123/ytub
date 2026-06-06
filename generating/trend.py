@@ -23,14 +23,10 @@ try:
 except Exception:  # pragma: no cover
     requests = None
 
-try:
-    from openai import OpenAI
-except Exception:  # pragma: no cover
-    OpenAI = None
-
 from json_ai import (
     json_api_key,
     json_base_url,
+    json_create_chat_completion,
     json_completion_text,
     json_extra_body,
     json_model,
@@ -376,7 +372,7 @@ REQUEST_TIMEOUT = _env_float("TRENDS_REQUEST_TIMEOUT", "10")
 CANDIDATE_LIMIT_FOR_AI = _env_int("TRENDS_AI_CANDIDATE_LIMIT", "60")
 SELECTED_TREND_COUNT = _env_int("TRENDS_SELECTED_COUNT", "5")
 AI_BASE_URL = json_base_url("TRENDS_AI_BASE_URL")
-AI_API_KEY = json_api_key("TRENDS_AI_API_KEY")
+AI_API_KEY = json_api_key("TRENDS_AI_API_KEY", base_url=AI_BASE_URL)
 AI_MODEL = resolve_json_model(json_model("TRENDS_AI_MODEL"), AI_BASE_URL, AI_API_KEY)
 AI_MAX_ATTEMPTS = _env_int("TRENDS_AI_MAX_ATTEMPTS", "3")
 AI_MAX_TOKENS = _env_int("TRENDS_AI_MAX_TOKENS", "1024")
@@ -840,16 +836,12 @@ def _build_trend_judge_prompt(candidates: list[dict], used_topics: list[str]) ->
 def _run_ai_judge(candidates: list[dict], used_topics: list[str]) -> list[dict]:
     if not USE_AI_JUDGE:
         return []
-    if OpenAI is None:
-        print("AI trend judge skipped: openai package is not installed.")
-        return []
     if not AI_API_KEY:
         print("AI trend judge skipped: no JSON prompt API key found.")
         return []
     if not candidates:
         return []
 
-    client = OpenAI(base_url=AI_BASE_URL, api_key=AI_API_KEY)
     print(f"AI trend judge using {json_provider_name(AI_BASE_URL)} model {AI_MODEL}.")
     prompt = _build_trend_judge_prompt(candidates, used_topics)
 
@@ -875,7 +867,7 @@ def _run_ai_judge(candidates: list[dict], used_topics: list[str]) -> list[dict]:
             extra_body = json_extra_body(AI_BASE_URL, AI_ENABLE_THINKING, AI_REASONING_BUDGET)
             if extra_body:
                 request["extra_body"] = extra_body
-            completion = client.chat.completions.create(**request)
+            completion = json_create_chat_completion(AI_BASE_URL, AI_API_KEY, request)
             text = json_completion_text(completion)
             parsed = _parse_json_dict(text)
             selected = parsed.get("selected") if isinstance(parsed, dict) else None

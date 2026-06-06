@@ -48,18 +48,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Install Browser For Puter TTS Fallback
-        run: python -m playwright install chromium
-
-      - name: Check CAMB TTS Secret
+      - name: Check Generation Secrets
         shell: pwsh
         env:
+          FREETHEAI_API_KEY: ${{ secrets.FREETHEAI_API_KEY }}
           CAMB_API_KEY: ${{ secrets.CAMB_API_KEY }}
         run: |
+          if (-not $env:FREETHEAI_API_KEY) {
+            throw "Missing GitHub secret FREETHEAI_API_KEY. Add your FreeTheAi key as a repository secret."
+          }
           if (-not $env:CAMB_API_KEY) {
-            echo "::warning::Missing GitHub secret CAMB_API_KEY. The voice step will try Puter ElevenLabs first, then skip to Edge TTS if CAMB is unavailable."
+            echo "::warning::Missing GitHub secret CAMB_API_KEY. FreeTheAi voice will be primary, then Edge TTS if CAMB is unavailable."
           } else {
-            echo "CAMB_API_KEY is configured. Voice order is Puter ElevenLabs, CAMB, then Edge TTS."
+            echo "FREETHEAI_API_KEY and CAMB_API_KEY are configured. Voice order is FreeTheAi, CAMB, then Edge TTS."
           }
 
       # 🎲 Always run, but randomize how many to generate (>=1)
@@ -90,30 +91,29 @@ jobs:
       - name: Run Pipeline + Upload
         if: env.RUN_PIPELINE == '1'
         env:
+          FREETHEAI_API_KEY: ${{ secrets.FREETHEAI_API_KEY }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           CAMB_API_KEY: ${{ secrets.CAMB_API_KEY }}
           BLUESMINDS_API_KEY: ${{ secrets.BLUESMINDS_API_KEY }}
-          JSON_API_KEY: ${{ secrets.JSON_API_KEY }}
-          JSON_BASE_URL: ${{ vars.JSON_BASE_URL || 'puter://chat' }}
-          JSON_MODEL: ${{ vars.JSON_MODEL || 'claude-sonnet-4.5' }}
+          JSON_API_KEY: ${{ secrets.FREETHEAI_API_KEY }}
+          JSON_BASE_URL: ${{ vars.JSON_BASE_URL || 'https://api.freetheai.xyz/v1' }}
+          JSON_MODEL: ${{ vars.JSON_MODEL || 'opc/deepseek-v4-flash-free' }}
           JSON_MODEL_DISCOVERY_ENABLED: "1"
           JSON_MODEL_CANDIDATES: "gpt-4o,gpt-5-chat,grok-4.20-0309-non-reasoning,openai/gpt-4o-mini,gpt-4o-mini"
           JSON_EXTRA_BODY_ENABLED: ${{ vars.JSON_EXTRA_BODY_ENABLED }}
-          VOICE: "Puter ElevenLabs"
-          TTS_BACKEND: "puter"
+          VOICE: "FreeTheAi"
+          TTS_BACKEND: "freetheai"
           TTS_FALLBACK_BACKENDS: "camb,edge"
+          FREETHEAI_TTS_MODEL: ${{ vars.FREETHEAI_TTS_MODEL || 'xai/grok-tts' }}
+          FREETHEAI_TTS_VOICE: ${{ vars.FREETHEAI_TTS_VOICE || 'default' }}
+          FREETHEAI_TTS_RESPONSE_FORMAT: "wav"
+          FREETHEAI_TTS_TIMEOUT: "180"
+          FREETHEAI_TTS_INSTRUCTIONS: "Speak like a calm friend explaining a strange true-crime case. Keep it continuous, natural, and easy to understand. Use a slightly slower pace with tiny human pauses, never a news-reader tone."
           CAMB_LANGUAGE: "en-us"
           CAMB_VOICE_ID: ${{ vars.CAMB_VOICE_ID }}
           CAMB_SPEECH_MODEL: ${{ vars.CAMB_SPEECH_MODEL }}
           CAMB_SPEAKING_RATE: "0.94"
           CAMB_USER_INSTRUCTIONS: "Sound like a calm friend explaining a strange true-crime case. Keep the delivery continuous and human, with only tiny natural pauses. Speak slightly slower than normal for clarity, but do not drag the pacing."
-          PUTER_TTS_PROVIDER: "elevenlabs"
-          PUTER_TTS_MODEL: ${{ vars.PUTER_TTS_MODEL || 'eleven_multilingual_v2' }}
-          PUTER_TTS_VOICE: ${{ vars.PUTER_TTS_VOICE || '21m00Tcm4TlvDq8ikWAM' }}
-          PUTER_TTS_RESPONSE_FORMAT: ""
-          PUTER_TTS_OUTPUT_FORMAT: ${{ vars.PUTER_TTS_OUTPUT_FORMAT || 'mp3_44100_128' }}
-          PUTER_TTS_TIMEOUT_MS: "120000"
-          PUTER_TTS_INSTRUCTIONS: "Speak like a calm friend explaining a strange true-crime case. Keep it continuous, natural, and easy to understand. Use a slightly slower pace with tiny human pauses, never a news-reader tone."
           EDGE_TTS_VOICE: "en-US-GuyNeural"
           EDGE_TTS_RATE: "-10%"
           EDGE_TTS_VOLUME: "+0%"
@@ -155,11 +155,13 @@ jobs:
           NVIDIA_IMAGE_RETRIES: "10"
           NVIDIA_IMAGE_RETRY_BACKOFF: "3"
           NVIDIA_IMAGE_DELAY: "3"
-          IMAGE_BACKEND_ORDER: "puter,nvidia"
-          PUTER_IMAGE_FALLBACK_ENABLED: "1"
-          PUTER_IMAGE_MODEL: ${{ vars.PUTER_IMAGE_MODEL || 'gemini-2.5-flash-image' }}
-          PUTER_IMAGE_TIMEOUT_MS: "180000"
-          PUTER_IMAGE_PROMPT_PREFIX: "Create a cinematic, safe, non-graphic vertical YouTube Shorts image. No readable text, no logos, no gore."
+          IMAGE_BACKEND_ORDER: "freetheai,nvidia"
+          FREETHEAI_IMAGE_MODEL: ${{ vars.FREETHEAI_IMAGE_MODEL || 'img/gpt-image-2' }}
+          FREETHEAI_IMAGE_SIZE: ${{ vars.FREETHEAI_IMAGE_SIZE || '1024x1536' }}
+          FREETHEAI_IMAGE_RESPONSE_FORMAT: "b64_json"
+          FREETHEAI_IMAGE_TIMEOUT: "240"
+          FREETHEAI_IMAGE_RETRIES: "3"
+          FREETHEAI_IMAGE_PROMPT_PREFIX: "Create a cinematic, safe, non-graphic vertical YouTube Shorts image. No readable text, no logos, no gore."
           CONTENT_ENABLE_THINKING: "1"
           CONTENT_STREAM: "1"
           TRENDS_USE_PYTRENDS: "0"
@@ -171,10 +173,9 @@ jobs:
           OPENVERSE_MUSIC_MAX_SECONDS: "600"
           OPENVERSE_MUSIC_PAGE_SIZE: "20"
           OPENVERSE_MUSIC_PAGES: "3"
-          # Puter.js keyless chat config. Leave vars empty to use Claude Sonnet via Puter.
-          PUTER_CHAT_TIMEOUT_MS: "180000"
-          CONTENT_BASE_URL: ${{ vars.CONTENT_BASE_URL || 'puter://chat' }}
-          CONTENT_MODEL: ${{ vars.CONTENT_MODEL || 'claude-sonnet-4.5' }}
+          # FreeTheAi JSON prompt config.
+          CONTENT_BASE_URL: ${{ vars.CONTENT_BASE_URL || 'https://api.freetheai.xyz/v1' }}
+          CONTENT_MODEL: ${{ vars.CONTENT_MODEL || 'opc/deepseek-v4-flash-free' }}
           NVIDIA_BASE_URL: "https://integrate.api.nvidia.com/v1"
 
           # Content.py new fields / retention config
@@ -195,8 +196,8 @@ jobs:
 
           # Voice.py Riva voice-plan config
           VOICE_PLAN_ENABLED: "0"
-          VOICE_PLAN_MODEL: ${{ vars.VOICE_PLAN_MODEL || 'claude-sonnet-4.5' }}
-          VOICE_PLAN_BASE_URL: ${{ vars.VOICE_PLAN_BASE_URL || 'puter://chat' }}
+          VOICE_PLAN_MODEL: ${{ vars.VOICE_PLAN_MODEL || 'opc/deepseek-v4-flash-free' }}
+          VOICE_PLAN_BASE_URL: ${{ vars.VOICE_PLAN_BASE_URL || 'https://api.freetheai.xyz/v1' }}
           VOICE_PLAN_MAX_ATTEMPTS: "3"
           VOICE_PLAN_MAX_TOKENS: "4096"
           VOICE_PLAN_TEMPERATURE: "0.35"
@@ -219,8 +220,8 @@ jobs:
 
           # Thumbnail.py AI planner config
           THUMBNAIL_PLAN_ENABLED: "1"
-          THUMBNAIL_PLAN_MODEL: ${{ vars.THUMBNAIL_PLAN_MODEL || 'claude-sonnet-4.5' }}
-          THUMBNAIL_PLAN_BASE_URL: ${{ vars.THUMBNAIL_PLAN_BASE_URL || 'puter://chat' }}
+          THUMBNAIL_PLAN_MODEL: ${{ vars.THUMBNAIL_PLAN_MODEL || 'opc/deepseek-v4-flash-free' }}
+          THUMBNAIL_PLAN_BASE_URL: ${{ vars.THUMBNAIL_PLAN_BASE_URL || 'https://api.freetheai.xyz/v1' }}
           THUMBNAIL_PLAN_MAX_ATTEMPTS: "3"
           THUMBNAIL_PLAN_MAX_TOKENS: "2048"
           THUMBNAIL_PLAN_REASONING_BUDGET: "2048"
@@ -242,8 +243,8 @@ jobs:
           TRENDS_KEYWORD_MODE: "random"
           TRENDS_NEWS_LIMIT_PER_KEYWORD: "8"
           TRENDS_YT_SUGGEST_LIMIT_PER_KEYWORD: "10"
-          TRENDS_AI_MODEL: ${{ vars.TRENDS_AI_MODEL || 'claude-sonnet-4.5' }}
-          TRENDS_AI_BASE_URL: ${{ vars.TRENDS_AI_BASE_URL || 'puter://chat' }}
+          TRENDS_AI_MODEL: ${{ vars.TRENDS_AI_MODEL || 'opc/deepseek-v4-flash-free' }}
+          TRENDS_AI_BASE_URL: ${{ vars.TRENDS_AI_BASE_URL || 'https://api.freetheai.xyz/v1' }}
           TRENDS_AI_MAX_ATTEMPTS: "3"
           TRENDS_AI_MAX_TOKENS: "1024"
           TRENDS_AI_TEMPERATURE: "0.25"
@@ -258,8 +259,8 @@ jobs:
           OUTPUT_JSON_PATH: ${{ github.workspace }}\output.json
           #youtube
           YOUTUBE_METADATA_AI_ENABLED: "1"
-          YOUTUBE_METADATA_MODEL: ${{ vars.YOUTUBE_METADATA_MODEL || 'claude-sonnet-4.5' }}
-          YOUTUBE_METADATA_BASE_URL: ${{ vars.YOUTUBE_METADATA_BASE_URL || 'puter://chat' }}
+          YOUTUBE_METADATA_MODEL: ${{ vars.YOUTUBE_METADATA_MODEL || 'opc/deepseek-v4-flash-free' }}
+          YOUTUBE_METADATA_BASE_URL: ${{ vars.YOUTUBE_METADATA_BASE_URL || 'https://api.freetheai.xyz/v1' }}
           YOUTUBE_METADATA_MAX_ATTEMPTS: "3"
           YOUTUBE_METADATA_MAX_TOKENS: "2048"
           YOUTUBE_METADATA_TEMPERATURE: "0.35"

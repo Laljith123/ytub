@@ -1,4 +1,3 @@
-import atexit
 import base64
 import json
 import os
@@ -13,6 +12,8 @@ import requests
 from dotenv import load_dotenv
 
 INVOKE_URL = "https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-schnell"
+FREETHEAI_BASE_URL = os.getenv("FREETHEAI_BASE_URL", "https://api.freetheai.xyz/v1").rstrip("/")
+FREETHEAI_IMAGE_URL = os.getenv("FREETHEAI_IMAGE_URL", f"{FREETHEAI_BASE_URL}/images/generations")
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_JSON = Path(os.getenv("OUTPUT_JSON_PATH", str(PROJECT_ROOT / "output.json")))
@@ -26,28 +27,25 @@ DEFAULT_HEIGHT = 1920
 
 IMAGE_BACKEND_ORDER = [
     item.strip().lower()
-    for item in os.getenv("IMAGE_BACKEND_ORDER", "puter,nvidia").split(",")
+    for item in os.getenv("IMAGE_BACKEND_ORDER", "freetheai,nvidia").split(",")
     if item.strip()
 ]
-PUTER_IMAGE_FALLBACK_ENABLED = os.getenv("PUTER_IMAGE_FALLBACK_ENABLED", "1") == "1"
-PUTER_IMAGE_MODEL = os.getenv("PUTER_IMAGE_MODEL", "gemini-2.5-flash-image").strip() or "gemini-2.5-flash-image"
-PUTER_IMAGE_TIMEOUT_MS = int(os.getenv("PUTER_IMAGE_TIMEOUT_MS", "180000"))
-PUTER_IMAGE_PROMPT_PREFIX = os.getenv(
-    "PUTER_IMAGE_PROMPT_PREFIX",
+FREETHEAI_IMAGE_MODEL = os.getenv("FREETHEAI_IMAGE_MODEL", "img/gpt-image-2").strip() or "img/gpt-image-2"
+FREETHEAI_IMAGE_TIMEOUT = int(os.getenv("FREETHEAI_IMAGE_TIMEOUT", "240"))
+FREETHEAI_IMAGE_RETRIES = int(os.getenv("FREETHEAI_IMAGE_RETRIES", "3"))
+FREETHEAI_IMAGE_BACKOFF = float(os.getenv("FREETHEAI_IMAGE_RETRY_BACKOFF", "2"))
+FREETHEAI_IMAGE_SIZE = os.getenv("FREETHEAI_IMAGE_SIZE", "1024x1536").strip()
+FREETHEAI_IMAGE_RESPONSE_FORMAT = os.getenv("FREETHEAI_IMAGE_RESPONSE_FORMAT", "b64_json").strip()
+FREETHEAI_IMAGE_PROMPT_PREFIX = os.getenv(
+    "FREETHEAI_IMAGE_PROMPT_PREFIX",
     (
         "Create a cinematic, safe, non-graphic vertical YouTube Shorts image. "
         "No readable text, no logos, no gore. "
     ),
 )
-PUTER_IMAGE_ASPECT_RATIO = os.getenv("PUTER_IMAGE_ASPECT_RATIO", "").strip()
-PUTER_IMAGE_SIZE = os.getenv("PUTER_IMAGE_SIZE", "").strip()
 
 
 _BASE64_RE = re.compile(r"^[A-Za-z0-9+/=\n\r]+$")
-_PUTER_PLAYWRIGHT = None
-_PUTER_BROWSER = None
-_PUTER_CONTEXT = None
-_PUTER_PAGE = None
 
 
 def _looks_like_base64(value: str) -> bool:
@@ -131,156 +129,96 @@ def _save_image_from_response(response: requests.Response, out_path: str) -> Non
         f.write(image_bytes)
 
 
-def _close_puter_browser() -> None:
-    global _PUTER_PLAYWRIGHT, _PUTER_BROWSER, _PUTER_CONTEXT, _PUTER_PAGE
-
-    for item in (_PUTER_PAGE, _PUTER_CONTEXT, _PUTER_BROWSER):
-        try:
-            if item is not None:
-                item.close()
-        except Exception:
-            pass
-
-    try:
-        if _PUTER_PLAYWRIGHT is not None:
-            _PUTER_PLAYWRIGHT.stop()
-    except Exception:
-        pass
-
-    _PUTER_PLAYWRIGHT = None
-    _PUTER_BROWSER = None
-    _PUTER_CONTEXT = None
-    _PUTER_PAGE = None
-
-
-atexit.register(_close_puter_browser)
-
-
-def _puter_page():
-    global _PUTER_PLAYWRIGHT, _PUTER_BROWSER, _PUTER_CONTEXT, _PUTER_PAGE
-
-    if _PUTER_PAGE is not None:
-        try:
-            if not _PUTER_PAGE.is_closed():
-                return _PUTER_PAGE
-        except Exception:
-            _close_puter_browser()
-
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError as exc:
-        raise RuntimeError(
-            "Playwright is required for Puter image fallback. "
-            "Run 'pip install playwright' and 'python -m playwright install chromium'."
-        ) from exc
-
-    _PUTER_PLAYWRIGHT = sync_playwright().start()
-    _PUTER_BROWSER = _PUTER_PLAYWRIGHT.chromium.launch(
-        headless=True,
-        args=["--no-sandbox", "--disable-dev-shm-usage"],
-    )
-    _PUTER_CONTEXT = _PUTER_BROWSER.new_context()
-    _PUTER_PAGE = _PUTER_CONTEXT.new_page()
-    _PUTER_PAGE.set_default_timeout(PUTER_IMAGE_TIMEOUT_MS)
-    _PUTER_PAGE.set_content(
-        """
-        <html>
-        <body>
-            <script src="https://js.puter.com/v2/"></script>
-        </body>
-        </html>
-        """,
-        wait_until="domcontentloaded",
-    )
-    _PUTER_PAGE.wait_for_function(
-        "() => window.puter && puter.ai && puter.ai.chat",
-        timeout=PUTER_IMAGE_TIMEOUT_MS,
-    )
-    return _PUTER_PAGE
-
-
-def _puter_image_config() -> dict[str, str]:
-    config: dict[str, str] = {}
-    if PUTER_IMAGE_ASPECT_RATIO:
-        config["aspect_ratio"] = PUTER_IMAGE_ASPECT_RATIO
-    if PUTER_IMAGE_SIZE:
-        config["image_size"] = PUTER_IMAGE_SIZE
-    return config
-
-
-def _puter_image_prompt(prompt: str) -> str:
+def _provider_image_prompt(prompt: str) -> str:
     text = str(prompt or "").strip()
-    prefix = str(PUTER_IMAGE_PROMPT_PREFIX or "").strip()
+    prefix = str(FREETHEAI_IMAGE_PROMPT_PREFIX or "").strip()
     return f"{prefix} {text}".strip()
 
 
 def _write_base64_image(data_url_or_b64: str, out_path: Path) -> None:
     value = str(data_url_or_b64 or "").strip()
     if not value:
-        raise RuntimeError("Puter image response did not contain image data.")
+        raise RuntimeError("Image response did not contain image data.")
     if value.startswith("data:image") and "," in value:
         value = value.split(",", 1)[1]
     out_path.write_bytes(base64.b64decode(value))
 
 
-def _save_puter_image(prompt: str, out_path: Path) -> None:
-    page = _puter_page()
-    result = page.evaluate(
-        """
-        async ({ prompt, model, imageConfig, timeoutMs }) => {
-            const blobToBase64 = (blob) => new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onerror = () => reject(reader.error || new Error("Unable to read image blob"));
-                reader.onloadend = () => {
-                    const value = String(reader.result || "");
-                    resolve(value.includes(",") ? value.split(",").pop() : value);
-                };
-                reader.readAsDataURL(blob);
-            });
+def _download_image(url: str, out_path: Path, timeout: int) -> None:
+    response = requests.get(url, timeout=timeout)
+    _raise_for_status_with_detail(response)
+    out_path.write_bytes(response.content)
 
-            const firstImageUrl = (response) => {
-                if (response?.message?.images?.length) {
-                    return response.message.images[0]?.image_url?.url || response.message.images[0]?.url || "";
-                }
-                if (response?.images?.length) {
-                    return response.images[0]?.image_url?.url || response.images[0]?.url || "";
-                }
-                return "";
-            };
 
-            const work = (async () => {
-                const options = { model };
-                if (imageConfig && Object.keys(imageConfig).length) {
-                    options.image_config = imageConfig;
-                }
-                const response = await puter.ai.chat(prompt, options);
-                const url = firstImageUrl(response);
-                if (!url) {
-                    throw new Error("Puter chat returned no generated image");
-                }
-                const fetched = await fetch(url);
-                if (!fetched.ok) {
-                    throw new Error(`Unable to fetch Puter image: HTTP ${fetched.status}`);
-                }
-                const blob = await fetched.blob();
-                return await blobToBase64(blob);
-            })();
+def _image_url_from_obj(obj: Any) -> str | None:
+    if isinstance(obj, dict):
+        for key in ("url", "image_url"):
+            value = obj.get(key)
+            if isinstance(value, str) and value.startswith(("http://", "https://")):
+                return value
+            if isinstance(value, dict):
+                nested = value.get("url")
+                if isinstance(nested, str) and nested.startswith(("http://", "https://")):
+                    return nested
+        for value in obj.values():
+            found = _image_url_from_obj(value)
+            if found:
+                return found
+    if isinstance(obj, list):
+        for item in obj:
+            found = _image_url_from_obj(item)
+            if found:
+                return found
+    return None
 
-            const timeout = new Promise((_, reject) => {
-                setTimeout(() => reject(new Error("Puter image generation timed out")), timeoutMs);
-            });
 
-            return Promise.race([work, timeout]);
-        }
-        """,
-        {
-            "prompt": _puter_image_prompt(prompt),
-            "model": PUTER_IMAGE_MODEL,
-            "imageConfig": _puter_image_config(),
-            "timeoutMs": PUTER_IMAGE_TIMEOUT_MS,
-        },
+def _save_image_payload(body: Any, out_path: Path, timeout: int) -> None:
+    b64 = _extract_base64_from_obj(body)
+    if b64:
+        _write_base64_image(b64, out_path)
+        return
+
+    image_url = _image_url_from_obj(body)
+    if image_url:
+        _download_image(image_url, out_path, timeout)
+        return
+
+    keys = list(body.keys()) if isinstance(body, dict) else type(body)
+    raise ValueError(f"Unable to find image data in response. Top-level keys: {keys}")
+
+
+def _free_image_api_key() -> str:
+    return _clean_api_key(os.getenv("FREETHEAI_API_KEY") or os.getenv("IMAGE_API_KEY") or os.getenv("JSON_API_KEY"))
+
+
+def _save_freetheai_image(prompt: str, out_path: Path) -> None:
+    api_key = _free_image_api_key()
+    if not api_key:
+        raise RuntimeError("FREETHEAI_API_KEY is missing.")
+
+    payload: Dict[str, Any] = {
+        "model": FREETHEAI_IMAGE_MODEL,
+        "prompt": _provider_image_prompt(prompt),
+    }
+    if FREETHEAI_IMAGE_SIZE:
+        payload["size"] = FREETHEAI_IMAGE_SIZE
+    if FREETHEAI_IMAGE_RESPONSE_FORMAT:
+        payload["response_format"] = FREETHEAI_IMAGE_RESPONSE_FORMAT
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    response = _post_with_retries(
+        payload,
+        headers=headers,
+        timeout=FREETHEAI_IMAGE_TIMEOUT,
+        retries=FREETHEAI_IMAGE_RETRIES,
+        backoff=FREETHEAI_IMAGE_BACKOFF,
+        url=FREETHEAI_IMAGE_URL,
     )
-    _write_base64_image(result, out_path)
+    _raise_for_status_with_detail(response)
+    _save_image_payload(response.json(), out_path, FREETHEAI_IMAGE_TIMEOUT)
 
 
 def _save_nvidia_image(
@@ -420,12 +358,13 @@ def _post_with_retries(
     timeout: int,
     retries: int,
     backoff: float,
+    url: str = INVOKE_URL,
 ) -> requests.Response:
     last_exc: Exception | None = None
     current_timeout = timeout
     for attempt in range(1, retries + 1):
         try:
-            response = requests.post(INVOKE_URL, headers=headers, json=payload, timeout=current_timeout)
+            response = requests.post(url, headers=headers, json=payload, timeout=current_timeout)
             if response.status_code in {429, 500, 502, 503, 504}:
                 if attempt == retries:
                     return response
@@ -516,11 +455,9 @@ def main() -> None:
         print("NVIDIA_API_KEY is not set. NVIDIA image fallback will be skipped.")
     if not IMAGE_BACKEND_ORDER:
         raise RuntimeError("IMAGE_BACKEND_ORDER is empty.")
-    if not nvidia_available and not PUTER_IMAGE_FALLBACK_ENABLED and all(
-        backend == "nvidia" for backend in IMAGE_BACKEND_ORDER
-    ):
+    if not nvidia_available and "freetheai" not in IMAGE_BACKEND_ORDER:
         raise RuntimeError(
-            "No usable image backend is available. Set NVIDIA_API_KEY or include puter in IMAGE_BACKEND_ORDER."
+            "No usable image backend is available. Set NVIDIA_API_KEY or include freetheai in IMAGE_BACKEND_ORDER."
         )
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -557,18 +494,15 @@ def main() -> None:
         saved_with = ""
         errors: list[str] = []
         for backend in IMAGE_BACKEND_ORDER:
-            if backend == "puter":
-                if not PUTER_IMAGE_FALLBACK_ENABLED:
-                    errors.append("puter: disabled")
-                    continue
+            if backend in {"freetheai", "free-the-ai", "freeai"}:
                 try:
-                    print(f"Generating image {idx:02d} with Puter model {PUTER_IMAGE_MODEL}.")
-                    _save_puter_image(prompt_text, out_path)
-                    saved_with = "Puter"
+                    print(f"Generating image {idx:02d} with FreeTheAi model {FREETHEAI_IMAGE_MODEL}.")
+                    _save_freetheai_image(prompt_text, out_path)
+                    saved_with = "FreeTheAi"
                     break
                 except Exception as exc:
-                    errors.append(f"puter: {exc}")
-                    print(f"Puter image generation failed for image {idx:02d}: {exc}")
+                    errors.append(f"freetheai: {exc}")
+                    print(f"FreeTheAi image generation failed for image {idx:02d}: {exc}")
                     continue
 
             if backend == "nvidia":

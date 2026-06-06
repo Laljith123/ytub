@@ -1,9 +1,8 @@
-import atexit
 import asyncio
-import base64
 import json
 import os
 import re
+import requests
 import shutil
 import subprocess
 import unicodedata
@@ -36,7 +35,7 @@ CHUNKS_DIR = OUTPUT_DIR / "chunks"
 OUTPUT_JSON = Path(os.getenv("OUTPUT_JSON_PATH", str(PROJECT_ROOT / "output.json")))
 FINAL_WAV = OUTPUT_DIR / "final.wav"
 
-TTS_BACKEND = os.getenv("TTS_BACKEND", "puter").strip().lower()
+TTS_BACKEND = os.getenv("TTS_BACKEND", "freetheai").strip().lower()
 TTS_FALLBACK_BACKENDS = [
     item.strip().lower()
     for item in os.getenv("TTS_FALLBACK_BACKENDS", "camb,edge").split(",")
@@ -68,23 +67,20 @@ EDGE_TTS_RATE = os.getenv("EDGE_TTS_RATE", "-10%")
 EDGE_TTS_VOLUME = os.getenv("EDGE_TTS_VOLUME", "+0%")
 EDGE_TTS_PITCH = os.getenv("EDGE_TTS_PITCH", "-2Hz")
 
-PUTER_TTS_PROVIDER = os.getenv("PUTER_TTS_PROVIDER", "elevenlabs").strip() or "elevenlabs"
-PUTER_TTS_MODEL = os.getenv("PUTER_TTS_MODEL", "eleven_multilingual_v2").strip() or "eleven_multilingual_v2"
-PUTER_TTS_VOICE = os.getenv("PUTER_TTS_VOICE", "21m00Tcm4TlvDq8ikWAM").strip() or "21m00Tcm4TlvDq8ikWAM"
-PUTER_TTS_LANGUAGE = os.getenv("PUTER_TTS_LANGUAGE", "").strip()
-PUTER_TTS_RESPONSE_FORMAT = os.getenv("PUTER_TTS_RESPONSE_FORMAT", "").strip()
-PUTER_TTS_OUTPUT_FORMAT = os.getenv("PUTER_TTS_OUTPUT_FORMAT", "mp3_44100_128").strip()
-PUTER_TTS_INCLUDE_INSTRUCTIONS = os.getenv("PUTER_TTS_INCLUDE_INSTRUCTIONS", "0") == "1"
-PUTER_TTS_INSTRUCTIONS = os.getenv(
-    "PUTER_TTS_INSTRUCTIONS",
+FREETHEAI_BASE_URL = os.getenv("FREETHEAI_BASE_URL", "https://api.freetheai.xyz/v1").rstrip("/")
+FREETHEAI_TTS_URL = os.getenv("FREETHEAI_TTS_URL", f"{FREETHEAI_BASE_URL}/audio/speech")
+FREETHEAI_TTS_MODEL = os.getenv("FREETHEAI_TTS_MODEL", "xai/grok-tts").strip() or "xai/grok-tts"
+FREETHEAI_TTS_VOICE = os.getenv("FREETHEAI_TTS_VOICE", "default").strip() or "default"
+FREETHEAI_TTS_RESPONSE_FORMAT = os.getenv("FREETHEAI_TTS_RESPONSE_FORMAT", "wav").strip() or "wav"
+FREETHEAI_TTS_TIMEOUT = int(os.getenv("FREETHEAI_TTS_TIMEOUT", "180"))
+FREETHEAI_TTS_INSTRUCTIONS = os.getenv(
+    "FREETHEAI_TTS_INSTRUCTIONS",
     (
         "Speak like a calm friend explaining a strange true-crime case. "
         "Keep it continuous, natural, and easy to understand. "
         "Use a slightly slower pace with tiny human pauses, never a news-reader tone."
     ),
 ).strip()
-PUTER_TTS_TIMEOUT_MS = int(os.getenv("PUTER_TTS_TIMEOUT_MS", "120000"))
-PUTER_TTS_TEXT_MAX_CHARS = int(os.getenv("PUTER_TTS_TEXT_MAX_CHARS", "2900"))
 
 RIVA_VOICE = os.getenv("RIVA_VOICE", "English-US-RadTTS.Female-1")
 RIVA_LANGUAGE = os.getenv("RIVA_LANGUAGE", "en-US")
@@ -103,6 +99,7 @@ def _clean_api_key(value: str | None) -> str:
 
 
 NVIDIA_API_KEY = _clean_api_key(os.getenv("NVIDIA_API_KEY"))
+FREETHEAI_API_KEY = _clean_api_key(os.getenv("FREETHEAI_API_KEY") or os.getenv("JSON_API_KEY"))
 
 VOICE_PLAN_ENABLED = os.getenv("VOICE_PLAN_ENABLED", "1") == "1"
 VOICE_PLAN_BASE_URL = json_base_url("VOICE_PLAN_BASE_URL")
@@ -131,12 +128,6 @@ VOICE_SFX_DIR = Path(os.getenv("VOICE_SFX_DIR", str(PROJECT_ROOT / "sfx")))
 VOICE_SFX_EXT = os.getenv("VOICE_SFX_EXT", ".wav")
 VOICE_SFX_GAIN_DB = float(os.getenv("VOICE_SFX_GAIN_DB", "-8"))
 VOICE_SFX_CROSSFADE_MS = int(os.getenv("VOICE_SFX_CROSSFADE_MS", "80"))
-
-_PUTER_PLAYWRIGHT = None
-_PUTER_BROWSER = None
-_PUTER_CONTEXT = None
-_PUTER_PAGE = None
-
 
 def split_text(text, max_words=40):
     paragraphs = re.split(r"\n\s*\n", text)
@@ -599,174 +590,38 @@ def generate_edge(chunk: str, path: Path) -> None:
     asyncio.run(_generate_edge_async(chunk, path))
 
 
-def _close_puter_browser() -> None:
-    global _PUTER_PLAYWRIGHT, _PUTER_BROWSER, _PUTER_CONTEXT, _PUTER_PAGE
+def generate_freetheai(chunk: str, path: Path) -> None:
+    if not FREETHEAI_API_KEY:
+        raise RuntimeError("FREETHEAI_API_KEY is missing.")
 
-    for item in (_PUTER_PAGE, _PUTER_CONTEXT, _PUTER_BROWSER):
-        try:
-            if item is not None:
-                item.close()
-        except Exception:
-            pass
-
-    try:
-        if _PUTER_PLAYWRIGHT is not None:
-            _PUTER_PLAYWRIGHT.stop()
-    except Exception:
-        pass
-
-    _PUTER_PLAYWRIGHT = None
-    _PUTER_BROWSER = None
-    _PUTER_CONTEXT = None
-    _PUTER_PAGE = None
-
-
-atexit.register(_close_puter_browser)
-
-
-def _puter_page():
-    global _PUTER_PLAYWRIGHT, _PUTER_BROWSER, _PUTER_CONTEXT, _PUTER_PAGE
-
-    if _PUTER_PAGE is not None:
-        try:
-            if not _PUTER_PAGE.is_closed():
-                return _PUTER_PAGE
-        except Exception:
-            _close_puter_browser()
-
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError as exc:
-        raise RuntimeError(
-            "Playwright is required for Puter TTS fallback. "
-            "Run 'pip install playwright' and 'python -m playwright install chromium'."
-        ) from exc
-
-    _PUTER_PLAYWRIGHT = sync_playwright().start()
-    _PUTER_BROWSER = _PUTER_PLAYWRIGHT.chromium.launch(
-        headless=True,
-        args=["--no-sandbox", "--disable-dev-shm-usage"],
-    )
-    _PUTER_CONTEXT = _PUTER_BROWSER.new_context()
-    _PUTER_PAGE = _PUTER_CONTEXT.new_page()
-    _PUTER_PAGE.set_default_timeout(PUTER_TTS_TIMEOUT_MS)
-    _PUTER_PAGE.set_content(
-        """
-        <html>
-        <body>
-            <script src="https://js.puter.com/v2/"></script>
-        </body>
-        </html>
-        """,
-        wait_until="domcontentloaded",
-    )
-    _PUTER_PAGE.wait_for_function(
-        "() => window.puter && puter.ai && puter.ai.txt2speech",
-        timeout=PUTER_TTS_TIMEOUT_MS,
-    )
-    return _PUTER_PAGE
-
-
-def _puter_options() -> dict:
-    options = {
-        "provider": PUTER_TTS_PROVIDER,
-        "voice": PUTER_TTS_VOICE,
-        "model": PUTER_TTS_MODEL,
+    payload = {
+        "model": FREETHEAI_TTS_MODEL,
+        "input": chunk,
+        "voice": FREETHEAI_TTS_VOICE,
+        "response_format": FREETHEAI_TTS_RESPONSE_FORMAT,
     }
-    if PUTER_TTS_RESPONSE_FORMAT:
-        options["response_format"] = PUTER_TTS_RESPONSE_FORMAT
-    if PUTER_TTS_OUTPUT_FORMAT:
-        options["output_format"] = PUTER_TTS_OUTPUT_FORMAT
-    if PUTER_TTS_LANGUAGE:
-        options["language"] = PUTER_TTS_LANGUAGE
-    if PUTER_TTS_INSTRUCTIONS and (PUTER_TTS_INCLUDE_INSTRUCTIONS or PUTER_TTS_PROVIDER.lower() != "elevenlabs"):
-        options["instructions"] = PUTER_TTS_INSTRUCTIONS
-    return options
+    if FREETHEAI_TTS_INSTRUCTIONS:
+        payload["instructions"] = FREETHEAI_TTS_INSTRUCTIONS
 
-
-def _extension_for_audio(mime: str) -> str:
-    normalized = str(mime or "").lower()
-    if "mpeg" in normalized or "mp3" in normalized:
-        return "mp3"
-    if "wav" in normalized or "wave" in normalized:
-        return "wav"
-    if "ogg" in normalized or "opus" in normalized:
-        return "opus"
-    if "aac" in normalized:
-        return "aac"
-    if "flac" in normalized:
-        return "flac"
-    if PUTER_TTS_OUTPUT_FORMAT:
-        return PUTER_TTS_OUTPUT_FORMAT.split("_", 1)[0].lstrip(".") or "mp3"
-    return PUTER_TTS_RESPONSE_FORMAT.lstrip(".") or "wav"
-
-
-def generate_puter(chunk: str, path: Path) -> None:
-    if len(chunk) > PUTER_TTS_TEXT_MAX_CHARS:
-        raise RuntimeError(
-            f"Puter TTS chunk is too long ({len(chunk)} chars). "
-            f"Limit is {PUTER_TTS_TEXT_MAX_CHARS} chars."
-        )
-
-    page = _puter_page()
-    result = page.evaluate(
-        """
-        async ({ text, options, timeoutMs }) => {
-            const readBlobAsBase64 = (blob) => new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onerror = () => reject(reader.error || new Error("Unable to read audio blob"));
-                reader.onloadend = () => {
-                    const value = String(reader.result || "");
-                    resolve(value.includes(",") ? value.split(",").pop() : value);
-                };
-                reader.readAsDataURL(blob);
-            });
-
-            const work = (async () => {
-                const audio = await puter.ai.txt2speech(text, options);
-                let blob = null;
-                let mime = "";
-
-                if (audio instanceof Blob) {
-                    blob = audio;
-                    mime = audio.type || "";
-                } else {
-                    const src = audio.currentSrc || audio.src;
-                    if (!src) {
-                        throw new Error("Puter returned an audio element without a source");
-                    }
-                    const response = await fetch(src);
-                    if (!response.ok) {
-                        throw new Error(`Unable to fetch Puter audio: HTTP ${response.status}`);
-                    }
-                    blob = await response.blob();
-                    mime = blob.type || response.headers.get("content-type") || "";
-                }
-
-                return {
-                    base64: await readBlobAsBase64(blob),
-                    mime
-                };
-            })();
-
-            const timeout = new Promise((_, reject) => {
-                setTimeout(() => reject(new Error("Puter TTS timed out")), timeoutMs);
-            });
-
-            return Promise.race([work, timeout]);
-        }
-        """,
-        {
-            "text": chunk,
-            "options": _puter_options(),
-            "timeoutMs": PUTER_TTS_TIMEOUT_MS,
+    response = requests.post(
+        FREETHEAI_TTS_URL,
+        headers={
+            "Authorization": f"Bearer {FREETHEAI_API_KEY}",
+            "Content-Type": "application/json",
         },
+        json=payload,
+        timeout=FREETHEAI_TTS_TIMEOUT,
     )
+    if response.status_code >= 400:
+        try:
+            detail = response.json()
+        except ValueError:
+            detail = response.text
+        raise RuntimeError(f"FreeTheAi TTS failed ({response.status_code}): {detail}")
 
-    raw = base64.b64decode(result["base64"])
-    ext = _extension_for_audio(result.get("mime", ""))
-    temp_path = path.with_suffix(f".puter.{ext}")
-    temp_path.write_bytes(raw)
+    ext = FREETHEAI_TTS_RESPONSE_FORMAT.lstrip(".") or "mp3"
+    temp_path = path.with_suffix(f".freetheai.{ext}")
+    temp_path.write_bytes(response.content)
 
     audio = AudioSegment.from_file(str(temp_path))
     audio.export(str(path), format="wav")
@@ -811,6 +666,8 @@ def _canonical_backend(backend: str) -> str:
     value = str(backend or "").strip().lower()
     if value in {"edge-tts", "edgetts"}:
         return "edge"
+    if value in {"free-the-ai", "freeai", "freetheai"}:
+        return "freetheai"
     return value
 
 
@@ -823,11 +680,11 @@ def _tts_backend_order() -> list[str]:
 
 
 def _generate_voice_chunk_with_backend(backend: str, chunk: str, path: Path) -> None:
+    if backend == "freetheai":
+        generate_freetheai(chunk, path)
+        return
     if backend == "camb":
         generate_camb(chunk, path)
-        return
-    if backend == "puter":
-        generate_puter(chunk, path)
         return
     if backend == "edge":
         generate_edge(chunk, path)

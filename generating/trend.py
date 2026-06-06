@@ -28,7 +28,14 @@ try:
 except Exception:  # pragma: no cover
     OpenAI = None
 
-from json_ai import json_api_key, json_base_url, json_extra_body, json_model, json_provider_name
+from json_ai import (
+    json_api_key,
+    json_base_url,
+    json_completion_text,
+    json_extra_body,
+    json_model,
+    json_provider_name,
+)
 
 
 def _configure_console_encoding() -> None:
@@ -809,7 +816,7 @@ def _run_ai_judge(candidates: list[dict], used_topics: list[str]) -> list[dict]:
             if extra_body:
                 request["extra_body"] = extra_body
             completion = client.chat.completions.create(**request)
-            text = (completion.choices[0].message.content or "").strip()
+            text = json_completion_text(completion)
             parsed = _parse_json_dict(text)
             selected = parsed.get("selected") if isinstance(parsed, dict) else None
             if isinstance(selected, list):

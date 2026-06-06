@@ -11,7 +11,14 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from openai import OpenAI
 
-from json_ai import json_api_key, json_base_url, json_extra_body, json_model, json_provider_name
+from json_ai import (
+    json_api_key,
+    json_base_url,
+    json_completion_text,
+    json_extra_body,
+    json_model,
+    json_provider_name,
+)
 
 
 load_dotenv()
@@ -1124,16 +1131,7 @@ def _run_completion(
 
     completion = client.chat.completions.create(**request)
 
-    if not stream:
-        return (completion.choices[0].message.content or "").strip()
-
-    s = []
-    for chunk in completion:
-        if not chunk.choices:
-            continue
-        if chunk.choices[0].delta.content is not None:
-            s.append(chunk.choices[0].delta.content)
-    return "".join(s).strip()
+    return json_completion_text(completion, stream=stream)
 
 
 def contents(trends):

@@ -9,7 +9,14 @@ from pathlib import Path
 from pydub import AudioSegment
 from pydub.silence import detect_nonsilent
 
-from json_ai import json_api_key, json_base_url, json_extra_body, json_model, json_provider_name
+from json_ai import (
+    json_api_key,
+    json_base_url,
+    json_completion_text,
+    json_extra_body,
+    json_model,
+    json_provider_name,
+)
 
 try:
     from dotenv import load_dotenv
@@ -333,7 +340,7 @@ def _run_voice_plan_completion(prompt: str) -> str:
         request["extra_body"] = extra_body
     completion = client.chat.completions.create(**request)
 
-    return (completion.choices[0].message.content or "").strip()
+    return json_completion_text(completion)
 
 
 def _coerce_voice_plan(data: dict, chunks: list[str]) -> list[dict] | None:

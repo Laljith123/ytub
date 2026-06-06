@@ -6,7 +6,14 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from json_ai import json_api_key, json_base_url, json_extra_body, json_model, json_provider_name
+from json_ai import (
+    json_api_key,
+    json_base_url,
+    json_completion_text,
+    json_extra_body,
+    json_model,
+    json_provider_name,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -301,7 +308,7 @@ def _run_thumbnail_completion(prompt: str) -> str:
     if extra_body:
         request["extra_body"] = extra_body
     completion = client.chat.completions.create(**request)
-    return (completion.choices[0].message.content or "").strip()
+    return json_completion_text(completion)
 
 
 def _build_thumbnail_plan(item: dict[str, Any]) -> dict[str, Any]:

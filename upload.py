@@ -16,7 +16,14 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from openai import OpenAI
 
-from generating.json_ai import json_api_key, json_base_url, json_extra_body, json_model, json_provider_name
+from generating.json_ai import (
+    json_api_key,
+    json_base_url,
+    json_completion_text,
+    json_extra_body,
+    json_model,
+    json_provider_name,
+)
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -504,7 +511,7 @@ def generate_metadata_plan(latest: dict, fallback_title: str, fallback_descripti
             if extra_body:
                 request["extra_body"] = extra_body
             completion = _metadata_client.chat.completions.create(**request)
-            raw_output = (completion.choices[0].message.content or "").strip()
+            raw_output = json_completion_text(completion)
             raw_output = _strip_reasoning_lines(raw_output)
             plan = _parse_json_object(raw_output)
             ok, reason = _metadata_plan_is_valid(plan)
@@ -583,7 +590,7 @@ def generate_hashtags(title: str, description: str, max_retries: int = 3) -> tup
                 request["extra_body"] = extra_body
             completion = _metadata_client.chat.completions.create(**request)
 
-            raw_output = (completion.choices[0].message.content or "").strip()
+            raw_output = json_completion_text(completion)
             raw_output = _strip_reasoning_lines(raw_output)
             data = _parse_json_object(raw_output)
             hashtags = _clean_hashtags(data.get("hashtags") if data else raw_output)

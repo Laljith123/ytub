@@ -42,7 +42,16 @@ RIVA_FUNCTION_ID = os.getenv("RIVA_FUNCTION_ID", "ddacc747-1269-4fab-bfd9-8f593d
 RIVA_SAMPLE_RATE_HZ = int(os.getenv("RIVA_SAMPLE_RATE_HZ", "24000"))
 RIVA_USE_SSL = os.getenv("RIVA_USE_SSL", "1") == "1"
 RIVA_PERMANENT_ERROR_EXIT_CODE = 42
-NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
+
+
+def _clean_api_key(value: str | None) -> str:
+    key = str(value or "").strip().strip("\"'")
+    if key.lower().startswith("bearer "):
+        key = key[7:].strip()
+    return key
+
+
+NVIDIA_API_KEY = _clean_api_key(os.getenv("NVIDIA_API_KEY"))
 
 VOICE_PLAN_ENABLED = os.getenv("VOICE_PLAN_ENABLED", "1") == "1"
 VOICE_PLAN_BASE_URL = json_base_url("VOICE_PLAN_BASE_URL")
@@ -432,6 +441,11 @@ def build_voice_plan(video_data: dict, chunks: list[str]) -> list[dict]:
 def generate_riva(chunk: str, path: Path):
     if not NVIDIA_API_KEY:
         raise RuntimeError("NVIDIA_API_KEY is missing.")
+    if not NVIDIA_API_KEY.startswith("nvapi-"):
+        raise RuntimeError(
+            "NVIDIA_API_KEY does not look like a Chatterbox API key. "
+            "Store only the raw nvapi-... value in the GitHub secret."
+        )
 
     import riva.client
 

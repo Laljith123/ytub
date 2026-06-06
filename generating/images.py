@@ -274,11 +274,23 @@ def _cleanup_old_images(out_dir: Path) -> None:
                 print(f"Unable to delete {path}: {exc}")
 
 
+def _clean_api_key(value: str | None) -> str:
+    key = str(value or "").strip().strip("\"'")
+    if key.lower().startswith("bearer "):
+        key = key[7:].strip()
+    return key
+
+
 def main() -> None:
     load_dotenv()
-    api_key = os.getenv("NVIDIA_API_KEY")
+    api_key = _clean_api_key(os.getenv("NVIDIA_API_KEY"))
     if not api_key:
         raise RuntimeError("NVIDIA_API_KEY is not set in environment")
+    if not api_key.startswith("nvapi-"):
+        raise RuntimeError(
+            "NVIDIA_API_KEY does not look like an NVIDIA API key. "
+            "Store only the raw nvapi-... value in the GitHub secret."
+        )
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     _cleanup_old_images(OUT_DIR)

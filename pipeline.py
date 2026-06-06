@@ -63,6 +63,12 @@ def _run_voice_with_retries(env: dict[str, str]) -> None:
             _run("generating/voice.py", env=env)
         except subprocess.CalledProcessError as exc:
             last_exc = exc
+            if exc.returncode == 42:
+                raise RuntimeError(
+                    "Chatterbox TTS is not available for this NVIDIA_API_KEY/account. "
+                    "Update the GitHub secret NVIDIA_API_KEY with a key from an account that can access "
+                    "the Chatterbox Multilingual Riva function, then rerun the workflow."
+                ) from exc
         if _has_audio_chunks() and FINAL_AUDIO.exists():
             return
 

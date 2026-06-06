@@ -33,6 +33,7 @@ RIVA_URI = os.getenv("RIVA_URI", "grpc.nvcf.nvidia.com:443")
 RIVA_FUNCTION_ID = os.getenv("RIVA_FUNCTION_ID", "ddacc747-1269-4fab-bfd9-8f593dead106")
 RIVA_SAMPLE_RATE_HZ = int(os.getenv("RIVA_SAMPLE_RATE_HZ", "24000"))
 RIVA_USE_SSL = os.getenv("RIVA_USE_SSL", "1") == "1"
+RIVA_PERMANENT_ERROR_EXIT_CODE = 42
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 
 VOICE_PLAN_ENABLED = os.getenv("VOICE_PLAN_ENABLED", "1") == "1"
@@ -437,13 +438,24 @@ def generate_riva(chunk: str, path: Path):
 
     service = riva.client.SpeechSynthesisService(auth)
 
-    response = service.synthesize(
-        text=chunk,
-        voice_name=RIVA_VOICE,
-        language_code=RIVA_LANGUAGE,
-        sample_rate_hz=RIVA_SAMPLE_RATE_HZ,
-        encoding=riva.client.AudioEncoding.LINEAR_PCM,
-    )
+    try:
+        response = service.synthesize(
+            text=chunk,
+            voice_name=RIVA_VOICE,
+            language_code=RIVA_LANGUAGE,
+            sample_rate_hz=RIVA_SAMPLE_RATE_HZ,
+            encoding=riva.client.AudioEncoding.LINEAR_PCM,
+        )
+    except Exception as exc:
+        error_text = str(exc)
+        if "StatusCode.NOT_FOUND" in error_text and "Function" in error_text:
+            raise RuntimeError(
+                "Chatterbox TTS is not available for this NVIDIA_API_KEY/account. "
+                f"The configured Chatterbox function id is {RIVA_FUNCTION_ID}. "
+                "Create or use an NVIDIA API key from the Chatterbox Multilingual model page "
+                "for the same account, then update the GitHub secret NVIDIA_API_KEY."
+            ) from exc
+        raise
 
     raw_audio = response.audio
 
@@ -552,7 +564,13 @@ for i, scene in enumerate(voice_plan):
         f"{str(scene.get('emotion', ''))} | {chunk[:80]}"
     )
 
-    generate_voice_chunk(chunk, path)
+    try:
+        generate_voice_chunk(chunk, path)
+    except RuntimeError as exc:
+        if "Chatterbox TTS is not available" in str(exc):
+            print(str(exc))
+            raise SystemExit(RIVA_PERMANENT_ERROR_EXIT_CODE) from exc
+        raise
     _speed_audio(path, speed)
 
     if not path.exists() or path.stat().st_size < 1024:

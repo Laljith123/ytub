@@ -9,11 +9,11 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from openai import OpenAI
 
 from json_ai import (
     json_api_key,
     json_base_url,
+    json_create_chat_completion,
     json_completion_text,
     json_extra_body,
     json_model,
@@ -52,7 +52,7 @@ MAX_OUTPUT_CHARS = int(os.getenv("CONTENT_MAX_OUTPUT_CHARS", "8000"))
 MAX_NGRAM_REPEAT = int(os.getenv("CONTENT_MAX_NGRAM_REPEAT", "20"))
 CONTENT_API_ENABLED = os.getenv("CONTENT_API_ENABLED", "1") == "1"
 CONTENT_BASE_URL = json_base_url("CONTENT_BASE_URL")
-CONTENT_API_KEY = json_api_key("CONTENT_API_KEY")
+CONTENT_API_KEY = json_api_key("CONTENT_API_KEY", base_url=CONTENT_BASE_URL)
 FALLBACK_MAX_TOKENS = int(os.getenv("CONTENT_FALLBACK_MAX_TOKENS", "4096"))
 USED_PROMPT_LIMIT = max(0, int(os.getenv("CONTENT_USED_PROMPT_LIMIT", "60")))
 LOCAL_FALLBACK_ENABLED = os.getenv("CONTENT_LOCAL_FALLBACK_ENABLED", "1") == "1"
@@ -1546,7 +1546,6 @@ def _build_prompt(trends: list[str], repeated: list[str], channel_titles: list[s
     )
 
 def _run_completion(
-    client: OpenAI,
     prompt: str,
     enable_thinking: bool,
     stream: bool,
@@ -1576,7 +1575,7 @@ def _run_completion(
     if extra_body:
         request["extra_body"] = extra_body
 
-    completion = client.chat.completions.create(**request)
+    completion = json_create_chat_completion(CONTENT_BASE_URL, CONTENT_API_KEY, request)
 
     return json_completion_text(completion, stream=stream)
 
@@ -1585,12 +1584,8 @@ def contents(trends):
     load_dotenv()
     if (not CONTENT_API_ENABLED or not CONTENT_API_KEY) and not LOCAL_FALLBACK_ENABLED:
         raise RuntimeError("No JSON prompt API key found. Set JSON_API_KEY, BLUESMINDS_API_KEY, or NVIDIA_API_KEY.")
-    client = None
+    can_use_api = CONTENT_API_ENABLED and bool(CONTENT_API_KEY)
     if CONTENT_API_ENABLED and CONTENT_API_KEY:
-        client = OpenAI(
-            base_url=CONTENT_BASE_URL,
-            api_key=CONTENT_API_KEY,
-        )
         print(f"Content JSON prompts using {json_provider_name(CONTENT_BASE_URL)} model {CONTENT_MODEL}.")
     elif not CONTENT_API_ENABLED:
         print("Content API disabled. Using local dynamic content fallback.")
@@ -1620,7 +1615,7 @@ def contents(trends):
     api_failure_reason = ""
     data = None
 
-    if client is not None:
+    if can_use_api:
         for attempt in range(1, max_attempts + 1):
             attempt_prompt = prompt
             if retry_reason:
@@ -1630,7 +1625,6 @@ def contents(trends):
                 )
             try:
                 s = _run_completion(
-                    client,
                     attempt_prompt,
                     enable_thinking=ENABLE_THINKING,
                     stream=STREAM_OUTPUT,

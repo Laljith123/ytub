@@ -7,14 +7,12 @@ from openai import OpenAI
 
 BLUESMINDS_BASE_URL = "https://api.bluesminds.com/v1"
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
+CHATGPT_FREE_BASE_URL = "https://chatgpt-api.shn.hk/v1"
+NO_AUTH_API_KEY = "no-auth-required"
 NVIDIA_DEFAULT_MODEL = "openai/gpt-oss-120b"
 BLUESMINDS_DEFAULT_MODEL = "gpt-4o"
 BLUESMINDS_MODEL_CANDIDATES = (
-    "gpt-4o,"
-    "gpt-5-chat,"
-    "grok-4.20-0309-non-reasoning,"
-    "openai/gpt-4o-mini,"
-    "gpt-4o-mini"
+    "gpt-4o,gpt-5-chat,grok-4.20-0309-non-reasoning,openai/gpt-4o-mini,gpt-4o-mini"
 )
 _MODEL_CACHE: dict[tuple[str, str], set[str]] = {}
 
@@ -31,7 +29,14 @@ def has_bluesminds_key() -> bool:
     return bool(env_value("BLUESMINDS_API_KEY"))
 
 
-def json_api_key(specific_env: str = "") -> str:
+def provider_allows_no_auth(base_url: str) -> bool:
+    return "chatgpt-api.shn.hk" in str(base_url or "").lower()
+
+
+def json_api_key(specific_env: str = "", base_url: str = "") -> str:
+    if provider_allows_no_auth(base_url):
+        return NO_AUTH_API_KEY
+
     names = [name for name in (specific_env, "JSON_API_KEY", "BLUESMINDS_API_KEY", "NVIDIA_API_KEY") if name]
     return env_value(*names)
 
@@ -76,14 +81,17 @@ def json_provider_name(base_url: str) -> str:
         return "Bluesminds"
     if "integrate.api.nvidia.com" in normalized:
         return "NVIDIA"
+    if provider_allows_no_auth(normalized):
+        return "ChatGPT API Free"
     return "OpenAI-compatible"
 
 
 def json_client(api_key_env: str = "", base_url_env: str = "") -> OpenAI | None:
-    key = json_api_key(api_key_env)
+    base_url = json_base_url(base_url_env)
+    key = json_api_key(api_key_env, base_url=base_url)
     if not key:
         return None
-    return OpenAI(base_url=json_base_url(base_url_env), api_key=key)
+    return OpenAI(base_url=base_url, api_key=key)
 
 
 def provider_supports_nvidia_extra_body(base_url: str) -> bool:
@@ -177,6 +185,36 @@ def json_extra_body(base_url: str, enable_thinking: bool, reasoning_budget: int)
             "reasoning_budget": reasoning_budget if enable_thinking else 0,
         }
     return None
+
+
+def _chat_completions_endpoint(base_url: str) -> str:
+    if provider_allows_no_auth(base_url):
+        return f"{str(base_url).rstrip('/')}/"
+    return f"{str(base_url).rstrip('/')}/chat/completions"
+
+
+def json_create_chat_completion(base_url: str, api_key: str, request: dict[str, Any]) -> Any:
+    if provider_allows_no_auth(base_url):
+        body = {key: value for key, value in request.items() if value is not None}
+        if body.get("stream"):
+            body["stream"] = False
+
+        headers = {"Content-Type": "application/json"}
+        if api_key and api_key != NO_AUTH_API_KEY:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        response = requests.post(
+            _chat_completions_endpoint(base_url),
+            headers=headers,
+            json=body,
+            timeout=float(os.getenv("JSON_COMPLETION_TIMEOUT", "90")),
+        )
+        if response.status_code >= 400:
+            raise RuntimeError(f"HTTP {response.status_code}: {response.text[:500]}")
+        return response.json()
+
+    client = OpenAI(base_url=base_url, api_key=api_key)
+    return client.chat.completions.create(**request)
 
 
 def _choice_message_content(choice: Any) -> str:

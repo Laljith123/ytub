@@ -153,12 +153,13 @@ jobs:
           OPENVERSE_MUSIC_MAX_SECONDS: "600"
           OPENVERSE_MUSIC_PAGE_SIZE: "20"
           OPENVERSE_MUSIC_PAGES: "3"
-          # Shared JSON prompt config. Leave vars empty to use automatic defaults.
-          CONTENT_MODEL: ${{ vars.CONTENT_MODEL }}
+          # Content JSON prompt config. Leave vars empty to use the free no-auth endpoint.
+          CONTENT_BASE_URL: ${{ vars.CONTENT_BASE_URL || 'https://chatgpt-api.shn.hk/v1' }}
+          CONTENT_MODEL: ${{ vars.CONTENT_MODEL || 'gpt-3.5-turbo' }}
           NVIDIA_BASE_URL: "https://integrate.api.nvidia.com/v1"
 
           # Content.py new fields / retention config
-          CONTENT_API_ENABLED: "0"
+          CONTENT_API_ENABLED: ${{ vars.CONTENT_API_ENABLED || '1' }}
           CONTENT_MAX_ATTEMPTS: "3"
           CONTENT_MAX_TOKENS: "3072"
           CONTENT_REASONING_BUDGET: "0"

@@ -1,4 +1,6 @@
+import atexit
 import asyncio
+import base64
 import json
 import os
 import re
@@ -34,6 +36,11 @@ OUTPUT_JSON = Path(os.getenv("OUTPUT_JSON_PATH", str(PROJECT_ROOT / "output.json
 FINAL_WAV = OUTPUT_DIR / "final.wav"
 
 TTS_BACKEND = os.getenv("TTS_BACKEND", "camb").strip().lower()
+TTS_FALLBACK_BACKENDS = [
+    item.strip().lower()
+    for item in os.getenv("TTS_FALLBACK_BACKENDS", "puter,edge").split(",")
+    if item.strip()
+]
 VOICE_SPEED = float(os.getenv("VOICE_SPEED", "1.0"))
 VOICE_GAIN_DB = float(os.getenv("VOICE_GAIN_DB", "0"))
 VOICE_CROSSFADE_MS = int(os.getenv("VOICE_CROSSFADE_MS", "60"))
@@ -59,6 +66,22 @@ EDGE_TTS_VOICE = os.getenv("EDGE_TTS_VOICE", "en-US-GuyNeural")
 EDGE_TTS_RATE = os.getenv("EDGE_TTS_RATE", "-10%")
 EDGE_TTS_VOLUME = os.getenv("EDGE_TTS_VOLUME", "+0%")
 EDGE_TTS_PITCH = os.getenv("EDGE_TTS_PITCH", "-2Hz")
+
+PUTER_TTS_PROVIDER = os.getenv("PUTER_TTS_PROVIDER", "openai").strip() or "openai"
+PUTER_TTS_MODEL = os.getenv("PUTER_TTS_MODEL", "gpt-4o-mini-tts").strip() or "gpt-4o-mini-tts"
+PUTER_TTS_VOICE = os.getenv("PUTER_TTS_VOICE", "shimmer").strip() or "shimmer"
+PUTER_TTS_LANGUAGE = os.getenv("PUTER_TTS_LANGUAGE", "").strip()
+PUTER_TTS_RESPONSE_FORMAT = os.getenv("PUTER_TTS_RESPONSE_FORMAT", "wav").strip() or "wav"
+PUTER_TTS_INSTRUCTIONS = os.getenv(
+    "PUTER_TTS_INSTRUCTIONS",
+    (
+        "Speak like a calm friend explaining a strange true-crime case. "
+        "Keep it continuous, natural, and easy to understand. "
+        "Use a slightly slower pace with tiny human pauses, never a news-reader tone."
+    ),
+).strip()
+PUTER_TTS_TIMEOUT_MS = int(os.getenv("PUTER_TTS_TIMEOUT_MS", "120000"))
+PUTER_TTS_TEXT_MAX_CHARS = int(os.getenv("PUTER_TTS_TEXT_MAX_CHARS", "2900"))
 
 RIVA_VOICE = os.getenv("RIVA_VOICE", "English-US-RadTTS.Female-1")
 RIVA_LANGUAGE = os.getenv("RIVA_LANGUAGE", "en-US")
@@ -105,6 +128,11 @@ VOICE_SFX_DIR = Path(os.getenv("VOICE_SFX_DIR", str(PROJECT_ROOT / "sfx")))
 VOICE_SFX_EXT = os.getenv("VOICE_SFX_EXT", ".wav")
 VOICE_SFX_GAIN_DB = float(os.getenv("VOICE_SFX_GAIN_DB", "-8"))
 VOICE_SFX_CROSSFADE_MS = int(os.getenv("VOICE_SFX_CROSSFADE_MS", "80"))
+
+_PUTER_PLAYWRIGHT = None
+_PUTER_BROWSER = None
+_PUTER_CONTEXT = None
+_PUTER_PAGE = None
 
 
 def split_text(text, max_words=40):
@@ -575,6 +603,175 @@ def generate_edge(chunk: str, path: Path) -> None:
     asyncio.run(_generate_edge_async(chunk, path))
 
 
+def _close_puter_browser() -> None:
+    global _PUTER_PLAYWRIGHT, _PUTER_BROWSER, _PUTER_CONTEXT, _PUTER_PAGE
+
+    for item in (_PUTER_PAGE, _PUTER_CONTEXT, _PUTER_BROWSER):
+        try:
+            if item is not None:
+                item.close()
+        except Exception:
+            pass
+
+    try:
+        if _PUTER_PLAYWRIGHT is not None:
+            _PUTER_PLAYWRIGHT.stop()
+    except Exception:
+        pass
+
+    _PUTER_PLAYWRIGHT = None
+    _PUTER_BROWSER = None
+    _PUTER_CONTEXT = None
+    _PUTER_PAGE = None
+
+
+atexit.register(_close_puter_browser)
+
+
+def _puter_page():
+    global _PUTER_PLAYWRIGHT, _PUTER_BROWSER, _PUTER_CONTEXT, _PUTER_PAGE
+
+    if _PUTER_PAGE is not None:
+        try:
+            if not _PUTER_PAGE.is_closed():
+                return _PUTER_PAGE
+        except Exception:
+            _close_puter_browser()
+
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        raise RuntimeError(
+            "Playwright is required for Puter TTS fallback. "
+            "Run 'pip install playwright' and 'python -m playwright install chromium'."
+        ) from exc
+
+    _PUTER_PLAYWRIGHT = sync_playwright().start()
+    _PUTER_BROWSER = _PUTER_PLAYWRIGHT.chromium.launch(
+        headless=True,
+        args=["--no-sandbox", "--disable-dev-shm-usage"],
+    )
+    _PUTER_CONTEXT = _PUTER_BROWSER.new_context()
+    _PUTER_PAGE = _PUTER_CONTEXT.new_page()
+    _PUTER_PAGE.set_default_timeout(PUTER_TTS_TIMEOUT_MS)
+    _PUTER_PAGE.set_content(
+        """
+        <html>
+        <body>
+            <script src="https://js.puter.com/v2/"></script>
+        </body>
+        </html>
+        """,
+        wait_until="domcontentloaded",
+    )
+    _PUTER_PAGE.wait_for_function(
+        "() => window.puter && puter.ai && puter.ai.txt2speech",
+        timeout=PUTER_TTS_TIMEOUT_MS,
+    )
+    return _PUTER_PAGE
+
+
+def _puter_options() -> dict:
+    options = {
+        "provider": PUTER_TTS_PROVIDER,
+        "voice": PUTER_TTS_VOICE,
+        "model": PUTER_TTS_MODEL,
+        "response_format": PUTER_TTS_RESPONSE_FORMAT,
+    }
+    if PUTER_TTS_LANGUAGE:
+        options["language"] = PUTER_TTS_LANGUAGE
+    if PUTER_TTS_INSTRUCTIONS:
+        options["instructions"] = PUTER_TTS_INSTRUCTIONS
+    return options
+
+
+def _extension_for_audio(mime: str) -> str:
+    normalized = str(mime or "").lower()
+    if "mpeg" in normalized or "mp3" in normalized:
+        return "mp3"
+    if "wav" in normalized or "wave" in normalized:
+        return "wav"
+    if "ogg" in normalized or "opus" in normalized:
+        return "opus"
+    if "aac" in normalized:
+        return "aac"
+    if "flac" in normalized:
+        return "flac"
+    return PUTER_TTS_RESPONSE_FORMAT.lstrip(".") or "wav"
+
+
+def generate_puter(chunk: str, path: Path) -> None:
+    if len(chunk) > PUTER_TTS_TEXT_MAX_CHARS:
+        raise RuntimeError(
+            f"Puter TTS chunk is too long ({len(chunk)} chars). "
+            f"Limit is {PUTER_TTS_TEXT_MAX_CHARS} chars."
+        )
+
+    page = _puter_page()
+    result = page.evaluate(
+        """
+        async ({ text, options, timeoutMs }) => {
+            const readBlobAsBase64 = (blob) => new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onerror = () => reject(reader.error || new Error("Unable to read audio blob"));
+                reader.onloadend = () => {
+                    const value = String(reader.result || "");
+                    resolve(value.includes(",") ? value.split(",").pop() : value);
+                };
+                reader.readAsDataURL(blob);
+            });
+
+            const work = (async () => {
+                const audio = await puter.ai.txt2speech(text, options);
+                let blob = null;
+                let mime = "";
+
+                if (audio instanceof Blob) {
+                    blob = audio;
+                    mime = audio.type || "";
+                } else {
+                    const src = audio.currentSrc || audio.src;
+                    if (!src) {
+                        throw new Error("Puter returned an audio element without a source");
+                    }
+                    const response = await fetch(src);
+                    if (!response.ok) {
+                        throw new Error(`Unable to fetch Puter audio: HTTP ${response.status}`);
+                    }
+                    blob = await response.blob();
+                    mime = blob.type || response.headers.get("content-type") || "";
+                }
+
+                return {
+                    base64: await readBlobAsBase64(blob),
+                    mime
+                };
+            })();
+
+            const timeout = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error("Puter TTS timed out")), timeoutMs);
+            });
+
+            return Promise.race([work, timeout]);
+        }
+        """,
+        {
+            "text": chunk,
+            "options": _puter_options(),
+            "timeoutMs": PUTER_TTS_TIMEOUT_MS,
+        },
+    )
+
+    raw = base64.b64decode(result["base64"])
+    ext = _extension_for_audio(result.get("mime", ""))
+    temp_path = path.with_suffix(f".puter.{ext}")
+    temp_path.write_bytes(raw)
+
+    audio = AudioSegment.from_file(str(temp_path))
+    audio.export(str(path), format="wav")
+    temp_path.unlink(missing_ok=True)
+
+
 def _camb_voice_id() -> int:
     try:
         return int(CAMB_VOICE_ID)
@@ -609,17 +806,52 @@ def generate_camb(chunk: str, path: Path) -> None:
     temp_path.unlink(missing_ok=True)
 
 
-def generate_voice_chunk(chunk: str, path: Path):
-    if TTS_BACKEND == "camb":
+def _canonical_backend(backend: str) -> str:
+    value = str(backend or "").strip().lower()
+    if value in {"edge-tts", "edgetts"}:
+        return "edge"
+    return value
+
+
+def _tts_backend_order() -> list[str]:
+    order: list[str] = []
+    for backend in [_canonical_backend(TTS_BACKEND), *(_canonical_backend(item) for item in TTS_FALLBACK_BACKENDS)]:
+        if backend and backend not in order:
+            order.append(backend)
+    return order
+
+
+def _generate_voice_chunk_with_backend(backend: str, chunk: str, path: Path) -> None:
+    if backend == "camb":
         generate_camb(chunk, path)
         return
-    if TTS_BACKEND in {"edge", "edge-tts", "edgetts"}:
+    if backend == "puter":
+        generate_puter(chunk, path)
+        return
+    if backend == "edge":
         generate_edge(chunk, path)
         return
-    if TTS_BACKEND == "riva":
+    if backend == "riva":
         generate_riva(chunk, path)
         return
-    raise RuntimeError(f"Unsupported TTS_BACKEND: {TTS_BACKEND}")
+    raise RuntimeError(f"Unsupported TTS backend: {backend}")
+
+
+def generate_voice_chunk(chunk: str, path: Path) -> str:
+    errors: list[str] = []
+    for backend in _tts_backend_order():
+        try:
+            path.unlink(missing_ok=True)
+            _generate_voice_chunk_with_backend(backend, chunk, path)
+            return backend
+        except Exception as exc:
+            errors.append(f"{backend}: {exc}")
+            if backend == _canonical_backend(TTS_BACKEND):
+                print(f"Primary TTS backend '{backend}' failed: {exc}")
+            else:
+                print(f"Fallback TTS backend '{backend}' failed: {exc}")
+
+    raise RuntimeError("All TTS backends failed. " + " | ".join(errors))
 
 
 def _trim_silence(audio: AudioSegment) -> AudioSegment:
@@ -701,12 +933,16 @@ for i, scene in enumerate(voice_plan):
     )
 
     try:
-        generate_voice_chunk(chunk, path)
+        used_backend = generate_voice_chunk(chunk, path)
     except RuntimeError as exc:
         if "Riva TTS function is not available" in str(exc):
             print(str(exc))
             raise SystemExit(RIVA_PERMANENT_ERROR_EXIT_CODE) from exc
         raise
+
+    if used_backend != _canonical_backend(TTS_BACKEND):
+        print(f"Generated chunk with fallback TTS backend: {used_backend}")
+
     _speed_audio(path, speed)
 
     if not path.exists() or path.stat().st_size < 1024:

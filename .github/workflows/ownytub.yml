@@ -48,13 +48,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Verify CAMB TTS Secret
+      - name: Install Browser For Puter TTS Fallback
+        run: python -m playwright install chromium
+
+      - name: Check CAMB TTS Secret
         shell: pwsh
         env:
           CAMB_API_KEY: ${{ secrets.CAMB_API_KEY }}
         run: |
           if (-not $env:CAMB_API_KEY) {
-            throw "Missing GitHub secret CAMB_API_KEY. Add your Camb.ai API key as a repository secret."
+            echo "::warning::Missing GitHub secret CAMB_API_KEY. The voice step will try Puter TTS fallback, then Edge TTS."
+          } else {
+            echo "CAMB_API_KEY is configured. Puter TTS remains available as fallback."
           }
 
       # 🎲 Always run, but randomize how many to generate (>=1)
@@ -96,11 +101,18 @@ jobs:
           JSON_EXTRA_BODY_ENABLED: ${{ vars.JSON_EXTRA_BODY_ENABLED }}
           VOICE: "CAMB"
           TTS_BACKEND: "camb"
+          TTS_FALLBACK_BACKENDS: "puter,edge"
           CAMB_LANGUAGE: "en-us"
           CAMB_VOICE_ID: ${{ vars.CAMB_VOICE_ID }}
           CAMB_SPEECH_MODEL: ${{ vars.CAMB_SPEECH_MODEL }}
           CAMB_SPEAKING_RATE: "0.94"
           CAMB_USER_INSTRUCTIONS: "Sound like a calm friend explaining a strange true-crime case. Keep the delivery continuous and human, with only tiny natural pauses. Speak slightly slower than normal for clarity, but do not drag the pacing."
+          PUTER_TTS_PROVIDER: "openai"
+          PUTER_TTS_MODEL: ${{ vars.PUTER_TTS_MODEL || 'gpt-4o-mini-tts' }}
+          PUTER_TTS_VOICE: ${{ vars.PUTER_TTS_VOICE || 'shimmer' }}
+          PUTER_TTS_RESPONSE_FORMAT: "wav"
+          PUTER_TTS_TIMEOUT_MS: "120000"
+          PUTER_TTS_INSTRUCTIONS: "Speak like a calm friend explaining a strange true-crime case. Keep it continuous, natural, and easy to understand. Use a slightly slower pace with tiny human pauses, never a news-reader tone."
           EDGE_TTS_VOICE: "en-US-GuyNeural"
           EDGE_TTS_RATE: "-10%"
           EDGE_TTS_VOLUME: "+0%"

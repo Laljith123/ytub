@@ -12,3 +12,4 @@ grpcio
 protobuf
 edge-tts
 camb-sdk
+playwright

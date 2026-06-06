@@ -158,6 +158,7 @@ jobs:
           NVIDIA_BASE_URL: "https://integrate.api.nvidia.com/v1"
 
           # Content.py new fields / retention config
+          CONTENT_API_ENABLED: "0"
           CONTENT_MAX_ATTEMPTS: "3"
           CONTENT_MAX_TOKENS: "3072"
           CONTENT_REASONING_BUDGET: "0"

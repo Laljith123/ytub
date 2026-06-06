@@ -50,6 +50,7 @@ STREAM_OUTPUT = os.getenv("CONTENT_STREAM", "0") == "1"
 SIMILARITY_THRESHOLD = float(os.getenv("CONTENT_DUP_SIM", "0.82"))
 MAX_OUTPUT_CHARS = int(os.getenv("CONTENT_MAX_OUTPUT_CHARS", "8000"))
 MAX_NGRAM_REPEAT = int(os.getenv("CONTENT_MAX_NGRAM_REPEAT", "20"))
+CONTENT_API_ENABLED = os.getenv("CONTENT_API_ENABLED", "1") == "1"
 CONTENT_BASE_URL = json_base_url("CONTENT_BASE_URL")
 CONTENT_API_KEY = json_api_key("CONTENT_API_KEY")
 FALLBACK_MAX_TOKENS = int(os.getenv("CONTENT_FALLBACK_MAX_TOKENS", "4096"))
@@ -81,10 +82,14 @@ LOCAL_FALLBACK_CASE_TERMS = tuple(
     )
     if term.strip()
 )
-CONTENT_MODEL = resolve_json_model(
-    json_model("CONTENT_MODEL"),
-    CONTENT_BASE_URL,
-    CONTENT_API_KEY,
+CONTENT_MODEL = (
+    resolve_json_model(
+        json_model("CONTENT_MODEL"),
+        CONTENT_BASE_URL,
+        CONTENT_API_KEY,
+    )
+    if CONTENT_API_ENABLED
+    else json_model("CONTENT_MODEL")
 )
 TITLE_MAX_CHARS = int(os.getenv("CONTENT_TITLE_MAX_CHARS", "80"))
 HOOK_MAX_WORDS = int(os.getenv("CONTENT_HOOK_MAX_WORDS", "18"))
@@ -1578,15 +1583,17 @@ def _run_completion(
 
 def contents(trends):
     load_dotenv()
-    if not CONTENT_API_KEY and not LOCAL_FALLBACK_ENABLED:
+    if (not CONTENT_API_ENABLED or not CONTENT_API_KEY) and not LOCAL_FALLBACK_ENABLED:
         raise RuntimeError("No JSON prompt API key found. Set JSON_API_KEY, BLUESMINDS_API_KEY, or NVIDIA_API_KEY.")
     client = None
-    if CONTENT_API_KEY:
+    if CONTENT_API_ENABLED and CONTENT_API_KEY:
         client = OpenAI(
             base_url=CONTENT_BASE_URL,
             api_key=CONTENT_API_KEY,
         )
         print(f"Content JSON prompts using {json_provider_name(CONTENT_BASE_URL)} model {CONTENT_MODEL}.")
+    elif not CONTENT_API_ENABLED:
+        print("Content API disabled. Using local dynamic content fallback.")
     else:
         print("No JSON prompt API key found. Local dynamic content fallback is enabled.")
     file_data = _load_json_list(OUTPUT_JSON, "Output JSON")

@@ -48,6 +48,23 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Verify Chatterbox Riva Secret
+        shell: pwsh
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          RIVA_URI: "grpc.nvcf.nvidia.com:443"
+          RIVA_FUNCTION_ID: "ddacc747-1269-4fab-bfd9-8f593dead106"
+          RIVA_VOICE: "Chatterbox-Multilingual.en-US.Male"
+          RIVA_LANGUAGE: "en-US"
+          RIVA_SAMPLE_RATE_HZ: "24000"
+          RIVA_USE_SSL: "1"
+          CHATTERBOX_PREFLIGHT_TEXT: "voice check"
+        run: |
+          if (-not $env:NVIDIA_API_KEY) {
+            throw "Missing GitHub secret NVIDIA_API_KEY. Add the Chatterbox API key from NVIDIA Build as a repository secret."
+          }
+          python generating/chatterbox_preflight.py
+
       # 🎲 Always run, but randomize how many to generate (>=1)
       - name: Random Generate Count
         shell: pwsh
@@ -171,7 +188,7 @@ jobs:
           RIVA_FUNCTION_ID: "ddacc747-1269-4fab-bfd9-8f593dead106"
           RIVA_SAMPLE_RATE_HZ: "24000"
           RIVA_USE_SSL: "1"
-          CHATTERBOX_PREFLIGHT_ENABLED: "1"
+          CHATTERBOX_PREFLIGHT_ENABLED: "0"
           CHATTERBOX_PREFLIGHT_TEXT: "voice check"
 
           # Thumbnail.py AI planner config

@@ -1,5 +1,6 @@
 import os
-import sys
+
+import grpc
 
 
 RIVA_VOICE = os.getenv("RIVA_VOICE", "Chatterbox-Multilingual.en-US.Male")
@@ -28,6 +29,22 @@ def _unavailable_message() -> str:
         f"The configured Chatterbox function id is {RIVA_FUNCTION_ID}. "
         "Create or use an NVIDIA API key from the Chatterbox Multilingual model page "
         "for the same account, then update the GitHub secret NVIDIA_API_KEY."
+    )
+
+
+def _print_grpc_error(exc: Exception) -> None:
+    code = exc.code() if isinstance(exc, grpc.RpcError) else None
+    details = exc.details() if isinstance(exc, grpc.RpcError) else str(exc)
+    print(f"Chatterbox gRPC status: {code}")
+    print(f"Chatterbox gRPC details: {details}")
+
+
+def _print_not_found_hint() -> None:
+    print(
+        "NVIDIA accepted the key format, but the hosted Cloud Function was not reachable for this key. "
+        "Most likely causes: the secret uses an NGC/deploy key instead of the Chatterbox Try API key, "
+        "the key was created under a different NVIDIA account/org, the key was revoked after exposure, "
+        "or this account does not currently have access to the hosted Chatterbox function."
     )
 
 
@@ -65,7 +82,9 @@ def main() -> None:
     except Exception as exc:
         error_text = str(exc)
         if "StatusCode.NOT_FOUND" in error_text and "Function" in error_text:
+            _print_grpc_error(exc)
             print(_unavailable_message())
+            _print_not_found_hint()
             raise SystemExit(RIVA_PERMANENT_ERROR_EXIT_CODE) from exc
         raise
 

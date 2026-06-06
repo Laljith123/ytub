@@ -18,6 +18,7 @@ from json_ai import (
     json_extra_body,
     json_model,
     json_provider_name,
+    resolve_json_model,
 )
 
 
@@ -40,8 +41,8 @@ if MAX_TOTAL_SECONDS < MIN_TOTAL_SECONDS:
 MIN_SCENES = max(1, int(math.ceil(MIN_TOTAL_SECONDS / SCENE_SECONDS)))
 MAX_SCENES = max(MIN_SCENES, int(math.ceil(MAX_TOTAL_SECONDS / SCENE_SECONDS)))
 
-MAX_TOKENS = int(os.getenv("CONTENT_MAX_TOKENS", "16384"))
-REASONING_BUDGET = int(os.getenv("CONTENT_REASONING_BUDGET", "16384"))
+MAX_TOKENS = int(os.getenv("CONTENT_MAX_TOKENS", "4096"))
+REASONING_BUDGET = int(os.getenv("CONTENT_REASONING_BUDGET", "0"))
 TEMPERATURE = float(os.getenv("CONTENT_TEMPERATURE", "0.7"))
 TOP_P = float(os.getenv("CONTENT_TOP_P", "0.9"))
 ENABLE_THINKING = os.getenv("CONTENT_ENABLE_THINKING", "1") == "1"
@@ -49,10 +50,14 @@ STREAM_OUTPUT = os.getenv("CONTENT_STREAM", "0") == "1"
 SIMILARITY_THRESHOLD = float(os.getenv("CONTENT_DUP_SIM", "0.82"))
 MAX_OUTPUT_CHARS = int(os.getenv("CONTENT_MAX_OUTPUT_CHARS", "8000"))
 MAX_NGRAM_REPEAT = int(os.getenv("CONTENT_MAX_NGRAM_REPEAT", "20"))
-FALLBACK_MAX_TOKENS = int(os.getenv("CONTENT_FALLBACK_MAX_TOKENS", "4096"))
-CONTENT_MODEL = json_model("CONTENT_MODEL")
 CONTENT_BASE_URL = json_base_url("CONTENT_BASE_URL")
 CONTENT_API_KEY = json_api_key("CONTENT_API_KEY")
+FALLBACK_MAX_TOKENS = int(os.getenv("CONTENT_FALLBACK_MAX_TOKENS", "4096"))
+CONTENT_MODEL = resolve_json_model(
+    json_model("CONTENT_MODEL"),
+    CONTENT_BASE_URL,
+    CONTENT_API_KEY,
+)
 TITLE_MAX_CHARS = int(os.getenv("CONTENT_TITLE_MAX_CHARS", "80"))
 HOOK_MAX_WORDS = int(os.getenv("CONTENT_HOOK_MAX_WORDS", "18"))
 CAPTION_MAX_CHARS = int(os.getenv("CONTENT_CAPTION_MAX_CHARS", "220"))

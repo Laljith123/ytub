@@ -35,6 +35,7 @@ from json_ai import (
     json_extra_body,
     json_model,
     json_provider_name,
+    resolve_json_model,
 )
 
 
@@ -374,9 +375,9 @@ REQUEST_TIMEOUT = _env_float("TRENDS_REQUEST_TIMEOUT", "10")
 
 CANDIDATE_LIMIT_FOR_AI = _env_int("TRENDS_AI_CANDIDATE_LIMIT", "60")
 SELECTED_TREND_COUNT = _env_int("TRENDS_SELECTED_COUNT", "5")
-AI_MODEL = json_model("TRENDS_AI_MODEL")
 AI_BASE_URL = json_base_url("TRENDS_AI_BASE_URL")
 AI_API_KEY = json_api_key("TRENDS_AI_API_KEY")
+AI_MODEL = resolve_json_model(json_model("TRENDS_AI_MODEL"), AI_BASE_URL, AI_API_KEY)
 AI_MAX_ATTEMPTS = _env_int("TRENDS_AI_MAX_ATTEMPTS", "3")
 AI_MAX_TOKENS = _env_int("TRENDS_AI_MAX_TOKENS", "4096")
 AI_TEMPERATURE = _env_float("TRENDS_AI_TEMPERATURE", "0.25")

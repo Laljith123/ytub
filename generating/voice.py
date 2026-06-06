@@ -16,6 +16,7 @@ from json_ai import (
     json_extra_body,
     json_model,
     json_provider_name,
+    resolve_json_model,
 )
 
 try:
@@ -44,9 +45,9 @@ RIVA_PERMANENT_ERROR_EXIT_CODE = 42
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 
 VOICE_PLAN_ENABLED = os.getenv("VOICE_PLAN_ENABLED", "1") == "1"
-VOICE_PLAN_MODEL = json_model("VOICE_PLAN_MODEL")
 VOICE_PLAN_BASE_URL = json_base_url("VOICE_PLAN_BASE_URL")
 VOICE_PLAN_API_KEY = json_api_key("VOICE_PLAN_API_KEY")
+VOICE_PLAN_MODEL = resolve_json_model(json_model("VOICE_PLAN_MODEL"), VOICE_PLAN_BASE_URL, VOICE_PLAN_API_KEY)
 VOICE_PLAN_MAX_ATTEMPTS = int(os.getenv("VOICE_PLAN_MAX_ATTEMPTS", "3"))
 VOICE_PLAN_MAX_TOKENS = int(os.getenv("VOICE_PLAN_MAX_TOKENS", "4096"))
 VOICE_PLAN_TEMPERATURE = float(os.getenv("VOICE_PLAN_TEMPERATURE", "0.35"))

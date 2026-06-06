@@ -23,6 +23,7 @@ from generating.json_ai import (
     json_extra_body,
     json_model,
     json_provider_name,
+    resolve_json_model,
 )
 
 try:
@@ -80,9 +81,9 @@ CLIENT_SECRETS_JSON = os.getenv("YOUTUBE_CLIENT_SECRETS_JSON", "")
 TOKEN_JSON = os.getenv("YOUTUBE_TOKEN_JSON", "")
 
 METADATA_AI_ENABLED = os.getenv("YOUTUBE_METADATA_AI_ENABLED", "1") == "1"
-METADATA_MODEL = json_model("YOUTUBE_METADATA_MODEL")
 METADATA_BASE_URL = json_base_url("YOUTUBE_METADATA_BASE_URL")
 METADATA_API_KEY = json_api_key("YOUTUBE_METADATA_API_KEY")
+METADATA_MODEL = resolve_json_model(json_model("YOUTUBE_METADATA_MODEL"), METADATA_BASE_URL, METADATA_API_KEY)
 METADATA_MAX_ATTEMPTS = int(os.getenv("YOUTUBE_METADATA_MAX_ATTEMPTS", "3"))
 METADATA_MAX_TOKENS = int(os.getenv("YOUTUBE_METADATA_MAX_TOKENS", "4096"))
 METADATA_TEMPERATURE = float(os.getenv("YOUTUBE_METADATA_TEMPERATURE", "0.35"))
@@ -541,7 +542,11 @@ def generate_hashtags(title: str, description: str, max_retries: int = 3) -> tup
         return POPULAR_HASHTAGS, ""
 
     max_retries = max(1, int(os.getenv("YOUTUBE_HASHTAG_MAX_ATTEMPTS", str(max_retries))))
-    model = json_model("YOUTUBE_HASHTAG_MODEL", fallback=METADATA_MODEL)
+    model = resolve_json_model(
+        json_model("YOUTUBE_HASHTAG_MODEL", fallback=METADATA_MODEL),
+        METADATA_BASE_URL,
+        METADATA_API_KEY,
+    )
     max_tokens = int(os.getenv("YOUTUBE_HASHTAG_MAX_TOKENS", "1024"))
     temperature = float(os.getenv("YOUTUBE_HASHTAG_TEMPERATURE", "0.35"))
     top_p = float(os.getenv("YOUTUBE_HASHTAG_TOP_P", "0.9"))

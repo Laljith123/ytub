@@ -13,6 +13,7 @@ from json_ai import (
     json_extra_body,
     json_model,
     json_provider_name,
+    resolve_json_model,
 )
 
 
@@ -52,9 +53,13 @@ THUMBNAIL_UPPERCASE = os.getenv("THUMBNAIL_UPPERCASE", "1") == "1"
 TITLE_FILE = OUTPUT_DIR / "thumbnail_title.txt"
 
 THUMBNAIL_PLAN_ENABLED = os.getenv("THUMBNAIL_PLAN_ENABLED", "1") == "1"
-THUMBNAIL_PLAN_MODEL = json_model("THUMBNAIL_PLAN_MODEL")
 THUMBNAIL_PLAN_BASE_URL = json_base_url("THUMBNAIL_PLAN_BASE_URL")
 THUMBNAIL_PLAN_API_KEY = json_api_key("THUMBNAIL_PLAN_API_KEY")
+THUMBNAIL_PLAN_MODEL = resolve_json_model(
+    json_model("THUMBNAIL_PLAN_MODEL"),
+    THUMBNAIL_PLAN_BASE_URL,
+    THUMBNAIL_PLAN_API_KEY,
+)
 THUMBNAIL_PLAN_MAX_ATTEMPTS = int(os.getenv("THUMBNAIL_PLAN_MAX_ATTEMPTS", "3"))
 THUMBNAIL_PLAN_MAX_TOKENS = int(os.getenv("THUMBNAIL_PLAN_MAX_TOKENS", "2048"))
 THUMBNAIL_PLAN_REASONING_BUDGET = int(os.getenv("THUMBNAIL_PLAN_REASONING_BUDGET", "2048"))

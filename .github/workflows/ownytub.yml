@@ -80,9 +80,9 @@ jobs:
           BLUESMINDS_API_KEY: ${{ secrets.BLUESMINDS_API_KEY }}
           JSON_API_KEY: ${{ secrets.JSON_API_KEY }}
           JSON_BASE_URL: ${{ vars.JSON_BASE_URL }}
-          JSON_MODEL: "gpt-5-chat"
+          JSON_MODEL: "gpt-4o"
           JSON_MODEL_DISCOVERY_ENABLED: "1"
-          JSON_MODEL_CANDIDATES: "gpt-5-chat,gpt-4o,grok-4.20-0309-non-reasoning,openai/gpt-4o-mini,gpt-4o-mini"
+          JSON_MODEL_CANDIDATES: "gpt-4o,gpt-5-chat,grok-4.20-0309-non-reasoning,openai/gpt-4o-mini,gpt-4o-mini"
           JSON_EXTRA_BODY_ENABLED: ${{ vars.JSON_EXTRA_BODY_ENABLED }}
           VOICE: "CHATTERBOX"
           RIVA_VOICE: "Chatterbox-Multilingual.en-US.Male"
@@ -91,7 +91,7 @@ jobs:
           YOUTUBE_CHANNEL_ID: ${{ vars.YOUTUBE_CHANNEL_ID }}
           YOUTUBE_HISTORY_ENABLED: "1"
           YOUTUBE_HISTORY_LIMIT: "200"
-          YOUTUBE_HISTORY_PROMPT_LIMIT: "40"
+          YOUTUBE_HISTORY_PROMPT_LIMIT: "20"
           UPLOAD_QUEUE_DIR: ${{ github.workspace }}\output\queue
           THUMBNAIL_PATH: ${{ github.workspace }}\output\thumbnail.jpg
           YOUTUBE_TOKEN_FILE: ${{ github.workspace }}\output\youtube_token.json
@@ -135,8 +135,9 @@ jobs:
 
           # Content.py new fields / retention config
           CONTENT_MAX_ATTEMPTS: "3"
-          CONTENT_MAX_TOKENS: "4096"
+          CONTENT_MAX_TOKENS: "3072"
           CONTENT_REASONING_BUDGET: "0"
+          CONTENT_USED_PROMPT_LIMIT: "60"
           CONTENT_TITLE_MAX_CHARS: "80"
           CONTENT_HOOK_MAX_WORDS: "18"
           CONTENT_CAPTION_MAX_CHARS: "220"
@@ -198,12 +199,12 @@ jobs:
           TRENDS_AI_MODEL: ${{ vars.TRENDS_AI_MODEL }}
           TRENDS_AI_BASE_URL: ${{ vars.TRENDS_AI_BASE_URL }}
           TRENDS_AI_MAX_ATTEMPTS: "3"
-          TRENDS_AI_MAX_TOKENS: "2048"
+          TRENDS_AI_MAX_TOKENS: "1024"
           TRENDS_AI_TEMPERATURE: "0.25"
           TRENDS_AI_TOP_P: "0.9"
           TRENDS_AI_ENABLE_THINKING: "1"
           TRENDS_AI_REASONING_BUDGET: "4096"
-          TRENDS_AI_CANDIDATE_LIMIT: "60"
+          TRENDS_AI_CANDIDATE_LIMIT: "30"
           TRENDS_SELECTED_COUNT: "5"
           TRENDS_COLLISION_SIM: "0.72"
           TRENDS_USED_PROMPT_LIMIT: "120"

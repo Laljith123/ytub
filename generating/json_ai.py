@@ -8,10 +8,10 @@ from openai import OpenAI
 BLUESMINDS_BASE_URL = "https://api.bluesminds.com/v1"
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 NVIDIA_DEFAULT_MODEL = "openai/gpt-oss-120b"
-BLUESMINDS_DEFAULT_MODEL = "gpt-5-chat"
+BLUESMINDS_DEFAULT_MODEL = "gpt-4o"
 BLUESMINDS_MODEL_CANDIDATES = (
-    "gpt-5-chat,"
     "gpt-4o,"
+    "gpt-5-chat,"
     "grok-4.20-0309-non-reasoning,"
     "openai/gpt-4o-mini,"
     "gpt-4o-mini"

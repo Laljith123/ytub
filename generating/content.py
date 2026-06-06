@@ -41,7 +41,7 @@ if MAX_TOTAL_SECONDS < MIN_TOTAL_SECONDS:
 MIN_SCENES = max(1, int(math.ceil(MIN_TOTAL_SECONDS / SCENE_SECONDS)))
 MAX_SCENES = max(MIN_SCENES, int(math.ceil(MAX_TOTAL_SECONDS / SCENE_SECONDS)))
 
-MAX_TOKENS = int(os.getenv("CONTENT_MAX_TOKENS", "4096"))
+MAX_TOKENS = int(os.getenv("CONTENT_MAX_TOKENS", "3072"))
 REASONING_BUDGET = int(os.getenv("CONTENT_REASONING_BUDGET", "0"))
 TEMPERATURE = float(os.getenv("CONTENT_TEMPERATURE", "0.7"))
 TOP_P = float(os.getenv("CONTENT_TOP_P", "0.9"))
@@ -53,6 +53,7 @@ MAX_NGRAM_REPEAT = int(os.getenv("CONTENT_MAX_NGRAM_REPEAT", "20"))
 CONTENT_BASE_URL = json_base_url("CONTENT_BASE_URL")
 CONTENT_API_KEY = json_api_key("CONTENT_API_KEY")
 FALLBACK_MAX_TOKENS = int(os.getenv("CONTENT_FALLBACK_MAX_TOKENS", "4096"))
+USED_PROMPT_LIMIT = max(0, int(os.getenv("CONTENT_USED_PROMPT_LIMIT", "60")))
 CONTENT_MODEL = resolve_json_model(
     json_model("CONTENT_MODEL"),
     CONTENT_BASE_URL,
@@ -984,6 +985,7 @@ def _all_trends_used(trends: list[str], repeated: list[str]) -> bool:
 def _build_prompt(trends: list[str], repeated: list[str], channel_titles: list[str]) -> str:
     trend_topics = _clean_trend_list(trends, allow_numeric=False)
     used_topics = _clean_trend_list(repeated, allow_numeric=False)
+    prompt_used_topics = used_topics[:USED_PROMPT_LIMIT] if USED_PROMPT_LIMIT else []
     used_norm = {_normalize(t) for t in used_topics}
     unused_topics = [t for t in trend_topics if _normalize(t) not in used_norm]
     all_used = bool(trend_topics) and not unused_topics
@@ -1000,9 +1002,12 @@ def _build_prompt(trends: list[str], repeated: list[str], channel_titles: list[s
         if source_context
         else ""
     )
-    ignore_line = (
-        f"Do NOT choose these trend topics from the list: {used_topics}. " if used_topics else ""
-    )
+    if prompt_used_topics:
+        more_used = len(used_topics) - len(prompt_used_topics)
+        more_note = f" plus {more_used} more checked locally" if more_used > 0 else ""
+        ignore_line = f"Do NOT choose these previously used trend topics{more_note}: {prompt_used_topics}. "
+    else:
+        ignore_line = ""
     history_line = (
         f"These YouTube channel titles already exist and are off-limits for concept reuse: {prompt_channel_titles}. "
         if prompt_channel_titles

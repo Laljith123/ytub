@@ -23,7 +23,6 @@ RUN_UPLOAD = os.getenv("RUN_UPLOAD", "0") == "1"
 UPLOAD_EACH = os.getenv("UPLOAD_EACH", "1") == "1"
 BACKGROUND_MUSIC_ENABLED = os.getenv("BACKGROUND_MUSIC_ENABLED", "1") == "1"
 CLEAN_OUTPUT_JSON_AFTER_UPLOAD = os.getenv("CLEAN_OUTPUT_JSON_AFTER_UPLOAD", "1") == "1"
-CHATTERBOX_PREFLIGHT_ENABLED = os.getenv("CHATTERBOX_PREFLIGHT_ENABLED", "1") == "1"
 PERSIST_HISTORY_FILES = os.getenv(
     "PERSIST_HISTORY_FILES",
     str(ROOT / "generating" / "history.json"),
@@ -66,9 +65,9 @@ def _run_voice_with_retries(env: dict[str, str]) -> None:
             last_exc = exc
             if exc.returncode == 42:
                 raise RuntimeError(
-                    "Chatterbox TTS is not available for this NVIDIA_API_KEY/account. "
+                    "The configured NVIDIA Riva TTS function is not available for this NVIDIA_API_KEY/account. "
                     "Update the GitHub secret NVIDIA_API_KEY with a key from an account that can access "
-                    "the Chatterbox Multilingual Riva function, then rerun the workflow."
+                    "the selected Riva TTS model, then rerun the workflow."
                 ) from exc
         if _has_audio_chunks() and FINAL_AUDIO.exists():
             return
@@ -84,21 +83,6 @@ def _run_voice_with_retries(env: dict[str, str]) -> None:
     if last_exc:
         raise last_exc
     raise RuntimeError("Voice chunks missing after retries.")
-
-
-def _run_chatterbox_preflight(env: dict[str, str]) -> None:
-    if not CHATTERBOX_PREFLIGHT_ENABLED:
-        return
-    try:
-        _run("generating/chatterbox_preflight.py", env=env)
-    except subprocess.CalledProcessError as exc:
-        if exc.returncode == 42:
-            raise RuntimeError(
-                "Chatterbox TTS is not available for this NVIDIA_API_KEY/account. "
-                "Update the GitHub secret NVIDIA_API_KEY with a key from an account that can access "
-                "the Chatterbox Multilingual Riva function, then rerun the workflow."
-            ) from exc
-        raise
 
 
 def _video_ready() -> bool:
@@ -239,7 +223,6 @@ def _reset_iteration_outputs() -> None:
 
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    _run_chatterbox_preflight(os.environ.copy())
 
     for index in range(1, max(GENERATE_COUNT, 1) + 1):
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

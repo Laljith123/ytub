@@ -32,14 +32,17 @@ CHUNKS_DIR = OUTPUT_DIR / "chunks"
 OUTPUT_JSON = Path(os.getenv("OUTPUT_JSON_PATH", str(PROJECT_ROOT / "output.json")))
 FINAL_WAV = OUTPUT_DIR / "final.wav"
 
-VOICE_SPEED = float(os.getenv("VOICE_SPEED", "1.25"))
+VOICE_SPEED = float(os.getenv("VOICE_SPEED", "0.94"))
 VOICE_GAIN_DB = float(os.getenv("VOICE_GAIN_DB", "0"))
+VOICE_CROSSFADE_MS = int(os.getenv("VOICE_CROSSFADE_MS", "60"))
+VOICE_DEFAULT_PAUSE_MS = int(os.getenv("VOICE_DEFAULT_PAUSE_MS", "260"))
+VOICE_FINAL_PAUSE_MS = int(os.getenv("VOICE_FINAL_PAUSE_MS", "420"))
 
-RIVA_VOICE = os.getenv("RIVA_VOICE", "Chatterbox-Multilingual.en-US.Male")
+RIVA_VOICE = os.getenv("RIVA_VOICE", "English-US-RadTTS.Female-1")
 RIVA_LANGUAGE = os.getenv("RIVA_LANGUAGE", "en-US")
 RIVA_URI = os.getenv("RIVA_URI", "grpc.nvcf.nvidia.com:443")
-RIVA_FUNCTION_ID = os.getenv("RIVA_FUNCTION_ID", "ddacc747-1269-4fab-bfd9-8f593dead106")
-RIVA_SAMPLE_RATE_HZ = int(os.getenv("RIVA_SAMPLE_RATE_HZ", "24000"))
+RIVA_FUNCTION_ID = os.getenv("RIVA_FUNCTION_ID", "5e607c81-7aa6-44ce-a11d-9e08f0a3fe49")
+RIVA_SAMPLE_RATE_HZ = int(os.getenv("RIVA_SAMPLE_RATE_HZ", "22050"))
 RIVA_USE_SSL = os.getenv("RIVA_USE_SSL", "1") == "1"
 RIVA_PERMANENT_ERROR_EXIT_CODE = 42
 
@@ -265,7 +268,7 @@ def _default_voice_plan(chunks: list[str]) -> list[dict]:
             "emotion": "uneasy suspense",
             "speed_multiplier": 1.0,
             "gain_db": 0.0,
-            "pause_after_ms": 0,
+            "pause_after_ms": VOICE_FINAL_PAUSE_MS if i == len(chunks) - 1 else VOICE_DEFAULT_PAUSE_MS,
             "sfx": "none",
             "sfx_timing": "none",
         }
@@ -293,7 +296,7 @@ def _build_voice_plan_prompt(video_data: dict, chunks: list[str]) -> str:
     context = _video_context(video_data, chunks)
     return (
         "You are a professional voice director for short-form true-crime narration. "
-        "Create ONLY an in-memory voice direction plan for Chatterbox Multilingual text-to-speech. "
+        "Create ONLY an in-memory voice direction plan for NVIDIA Riva text-to-speech. "
         "Do NOT rewrite, paraphrase, summarize, translate, censor, or add new narration. "
         "Do NOT add slang to the script. Use respectful suspense, not comedy. "
         "Direct it like a friend quietly explaining something suspicious, not like a news anchor. "
@@ -443,7 +446,7 @@ def generate_riva(chunk: str, path: Path):
         raise RuntimeError("NVIDIA_API_KEY is missing.")
     if not NVIDIA_API_KEY.startswith("nvapi-"):
         raise RuntimeError(
-            "NVIDIA_API_KEY does not look like a Chatterbox API key. "
+            "NVIDIA_API_KEY does not look like an NVIDIA API key. "
             "Store only the raw nvapi-... value in the GitHub secret."
         )
 
@@ -472,10 +475,10 @@ def generate_riva(chunk: str, path: Path):
         error_text = str(exc)
         if "StatusCode.NOT_FOUND" in error_text and "Function" in error_text:
             raise RuntimeError(
-                "Chatterbox TTS is not available for this NVIDIA_API_KEY/account. "
-                f"The configured Chatterbox function id is {RIVA_FUNCTION_ID}. "
-                "Create or use an NVIDIA API key from the Chatterbox Multilingual model page "
-                "for the same account, then update the GitHub secret NVIDIA_API_KEY."
+                "The configured NVIDIA Riva TTS function is not available for this NVIDIA_API_KEY/account. "
+                f"The configured function id is {RIVA_FUNCTION_ID}. "
+                "Create or use an NVIDIA API key from the selected Riva TTS model page, "
+                "then update the GitHub secret NVIDIA_API_KEY."
             ) from exc
         raise
 
@@ -582,14 +585,14 @@ for i, scene in enumerate(voice_plan):
     speed = VOICE_SPEED * float(scene.get("speed_multiplier", 1.0))
 
     print(
-        f"Generating Chatterbox voice chunk {i + 1}/{len(voice_plan)}: "
+        f"Generating Riva voice chunk {i + 1}/{len(voice_plan)}: "
         f"{str(scene.get('emotion', ''))} | {chunk[:80]}"
     )
 
     try:
         generate_voice_chunk(chunk, path)
     except RuntimeError as exc:
-        if "Chatterbox TTS is not available" in str(exc):
+        if "Riva TTS function is not available" in str(exc):
             print(str(exc))
             raise SystemExit(RIVA_PERMANENT_ERROR_EXIT_CODE) from exc
         raise
@@ -620,7 +623,7 @@ for i, p in enumerate(paths):
     if i == 0:
         combined = audio
     else:
-        combined = combined.append(audio, crossfade=180)
+        combined = combined.append(audio, crossfade=max(0, VOICE_CROSSFADE_MS))
 
 combined = combined.normalize()
 

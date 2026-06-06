@@ -155,6 +155,7 @@ jobs:
           NVIDIA_IMAGE_RETRIES: "10"
           NVIDIA_IMAGE_RETRY_BACKOFF: "3"
           NVIDIA_IMAGE_DELAY: "3"
+          IMAGE_BACKEND_ORDER: "puter,nvidia"
           PUTER_IMAGE_FALLBACK_ENABLED: "1"
           PUTER_IMAGE_MODEL: ${{ vars.PUTER_IMAGE_MODEL || 'gemini-2.5-flash-image' }}
           PUTER_IMAGE_TIMEOUT_MS: "180000"

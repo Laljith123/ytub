@@ -24,6 +24,11 @@ DEFAULT_STEPS = 4
 DEFAULT_WIDTH = 1080
 DEFAULT_HEIGHT = 1920
 
+IMAGE_BACKEND_ORDER = [
+    item.strip().lower()
+    for item in os.getenv("IMAGE_BACKEND_ORDER", "puter,nvidia").split(",")
+    if item.strip()
+]
 PUTER_IMAGE_FALLBACK_ENABLED = os.getenv("PUTER_IMAGE_FALLBACK_ENABLED", "1") == "1"
 PUTER_IMAGE_MODEL = os.getenv("PUTER_IMAGE_MODEL", "gemini-2.5-flash-image").strip() or "gemini-2.5-flash-image"
 PUTER_IMAGE_TIMEOUT_MS = int(os.getenv("PUTER_IMAGE_TIMEOUT_MS", "180000"))
@@ -278,6 +283,54 @@ def _save_puter_image(prompt: str, out_path: Path) -> None:
     _write_base64_image(result, out_path)
 
 
+def _save_nvidia_image(
+    prompt_text: str,
+    out_path: Path,
+    *,
+    headers: Dict[str, str],
+    mode: str,
+    steps: int,
+    width: int | None,
+    height: int | None,
+    timeout: int,
+    retries: int,
+    backoff: float,
+) -> None:
+    payload = _build_payload(
+        prompt_text,
+        seed=DEFAULT_SEED,
+        mode=mode,
+        steps=steps,
+        width=width,
+        height=height,
+    )
+    response = _post_with_retries(
+        payload,
+        headers=headers,
+        timeout=timeout,
+        retries=retries,
+        backoff=backoff,
+    )
+    if response.status_code == 422 and width is not None and height is not None:
+        payload = _build_payload(
+            prompt_text,
+            seed=DEFAULT_SEED,
+            mode=mode,
+            steps=steps,
+            width=None,
+            height=None,
+        )
+        response = _post_with_retries(
+            payload,
+            headers=headers,
+            timeout=timeout,
+            retries=retries,
+            backoff=backoff,
+        )
+    _raise_for_status_with_detail(response)
+    _save_image_from_response(response, str(out_path))
+
+
 def _load_last_image_prompts(path: Path) -> List[str]:
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -457,13 +510,17 @@ def main() -> None:
     if api_key and not api_key.startswith("nvapi-"):
         print(
             "NVIDIA_API_KEY does not look like an NVIDIA API key. "
-            "Puter image fallback will be used if enabled."
+            "NVIDIA image fallback will be skipped."
         )
     if not api_key:
-        print("NVIDIA_API_KEY is not set. Puter image fallback will be used if enabled.")
-    if not nvidia_available and not PUTER_IMAGE_FALLBACK_ENABLED:
+        print("NVIDIA_API_KEY is not set. NVIDIA image fallback will be skipped.")
+    if not IMAGE_BACKEND_ORDER:
+        raise RuntimeError("IMAGE_BACKEND_ORDER is empty.")
+    if not nvidia_available and not PUTER_IMAGE_FALLBACK_ENABLED and all(
+        backend == "nvidia" for backend in IMAGE_BACKEND_ORDER
+    ):
         raise RuntimeError(
-            "No usable image backend is available. Set NVIDIA_API_KEY or enable PUTER_IMAGE_FALLBACK_ENABLED=1."
+            "No usable image backend is available. Set NVIDIA_API_KEY or include puter in IMAGE_BACKEND_ORDER."
         )
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -498,53 +555,51 @@ def main() -> None:
         prompt_text = _with_aspect_hint(prompt, width, height) if add_aspect_hint else prompt
 
         saved_with = ""
-        nvidia_error: Exception | None = None
-        if nvidia_available:
-            payload = _build_payload(
-                prompt_text,
-                seed=DEFAULT_SEED,
-                mode=mode,
-                steps=steps,
-                width=width,
-                height=height,
-            )
-            try:
-                response = _post_with_retries(
-                    payload,
-                    headers=headers,
-                    timeout=timeout,
-                    retries=retries,
-                    backoff=backoff,
-                )
-                if response.status_code == 422 and width is not None and height is not None:
-                    payload = _build_payload(
+        errors: list[str] = []
+        for backend in IMAGE_BACKEND_ORDER:
+            if backend == "puter":
+                if not PUTER_IMAGE_FALLBACK_ENABLED:
+                    errors.append("puter: disabled")
+                    continue
+                try:
+                    print(f"Generating image {idx:02d} with Puter model {PUTER_IMAGE_MODEL}.")
+                    _save_puter_image(prompt_text, out_path)
+                    saved_with = "Puter"
+                    break
+                except Exception as exc:
+                    errors.append(f"puter: {exc}")
+                    print(f"Puter image generation failed for image {idx:02d}: {exc}")
+                    continue
+
+            if backend == "nvidia":
+                if not nvidia_available:
+                    errors.append("nvidia: unavailable")
+                    continue
+                try:
+                    print(f"Generating image {idx:02d} with NVIDIA fallback.")
+                    _save_nvidia_image(
                         prompt_text,
-                        seed=DEFAULT_SEED,
+                        out_path,
+                        headers=headers,
                         mode=mode,
                         steps=steps,
-                        width=None,
-                        height=None,
-                    )
-                    response = _post_with_retries(
-                        payload,
-                        headers=headers,
+                        width=width,
+                        height=height,
                         timeout=timeout,
                         retries=retries,
                         backoff=backoff,
                     )
-                _raise_for_status_with_detail(response)
-                _save_image_from_response(response, str(out_path))
-                saved_with = "NVIDIA"
-            except Exception as exc:
-                nvidia_error = exc
-                print(f"NVIDIA image generation failed for image {idx:02d}: {exc}")
+                    saved_with = "NVIDIA"
+                    break
+                except Exception as exc:
+                    errors.append(f"nvidia: {exc}")
+                    print(f"NVIDIA image generation failed for image {idx:02d}: {exc}")
+                    continue
+
+            errors.append(f"{backend}: unsupported image backend")
 
         if not saved_with:
-            if not PUTER_IMAGE_FALLBACK_ENABLED:
-                raise RuntimeError(f"NVIDIA image generation failed and Puter fallback is disabled: {nvidia_error}")
-            print(f"Generating image {idx:02d} with Puter fallback model {PUTER_IMAGE_MODEL}.")
-            _save_puter_image(prompt_text, out_path)
-            saved_with = "Puter"
+            raise RuntimeError("All image backends failed. " + " | ".join(errors))
 
         if width is not None and height is not None and not disable_size:
             _ensure_target_image(out_path, width, height)

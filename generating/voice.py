@@ -33,12 +33,27 @@ CHUNKS_DIR = OUTPUT_DIR / "chunks"
 OUTPUT_JSON = Path(os.getenv("OUTPUT_JSON_PATH", str(PROJECT_ROOT / "output.json")))
 FINAL_WAV = OUTPUT_DIR / "final.wav"
 
-TTS_BACKEND = os.getenv("TTS_BACKEND", "edge").strip().lower()
+TTS_BACKEND = os.getenv("TTS_BACKEND", "camb").strip().lower()
 VOICE_SPEED = float(os.getenv("VOICE_SPEED", "1.0"))
 VOICE_GAIN_DB = float(os.getenv("VOICE_GAIN_DB", "0"))
 VOICE_CROSSFADE_MS = int(os.getenv("VOICE_CROSSFADE_MS", "60"))
-VOICE_DEFAULT_PAUSE_MS = int(os.getenv("VOICE_DEFAULT_PAUSE_MS", "260"))
-VOICE_FINAL_PAUSE_MS = int(os.getenv("VOICE_FINAL_PAUSE_MS", "420"))
+VOICE_DEFAULT_PAUSE_MS = int(os.getenv("VOICE_DEFAULT_PAUSE_MS", "110"))
+VOICE_PAUSE_VARIATION_MS = int(os.getenv("VOICE_PAUSE_VARIATION_MS", "55"))
+VOICE_FINAL_PAUSE_MS = int(os.getenv("VOICE_FINAL_PAUSE_MS", "280"))
+
+CAMB_API_KEY = os.getenv("CAMB_API_KEY", "").strip().strip("\"'")
+CAMB_LANGUAGE = os.getenv("CAMB_LANGUAGE", "en-us").strip() or "en-us"
+CAMB_VOICE_ID = os.getenv("CAMB_VOICE_ID", "147320").strip() or "147320"
+CAMB_SPEECH_MODEL = os.getenv("CAMB_SPEECH_MODEL", "mars-instruct").strip() or "mars-instruct"
+CAMB_SPEAKING_RATE = float(os.getenv("CAMB_SPEAKING_RATE", "0.94"))
+CAMB_USER_INSTRUCTIONS = os.getenv(
+    "CAMB_USER_INSTRUCTIONS",
+    (
+        "Sound like a calm friend explaining a strange true-crime case. "
+        "Keep the delivery continuous and human, with only tiny natural pauses. "
+        "Speak slightly slower than normal for clarity, but do not drag the pacing."
+    ),
+).strip()
 
 EDGE_TTS_VOICE = os.getenv("EDGE_TTS_VOICE", "en-US-GuyNeural")
 EDGE_TTS_RATE = os.getenv("EDGE_TTS_RATE", "-10%")
@@ -266,6 +281,30 @@ def _clean_short_text(value: str, max_chars: int = 80) -> str:
     return text[:max_chars]
 
 
+def _natural_pause_ms(index: int, total: int, text: str) -> int:
+    if total > 0 and index >= total - 1:
+        return max(0, VOICE_FINAL_PAUSE_MS)
+    if VOICE_DEFAULT_PAUSE_MS <= 0:
+        return 0
+
+    variation = max(0, VOICE_PAUSE_VARIATION_MS)
+    seed = sum(ord(ch) for ch in text) + index * 31
+    offset = 0
+    if variation:
+        offset = seed % (variation * 2 + 1) - variation
+
+    stripped = str(text or "").rstrip()
+    punctuation_bonus = 0
+    if stripped.endswith("?"):
+        punctuation_bonus = 35
+    elif stripped.endswith((".", "!")):
+        punctuation_bonus = 20
+    elif stripped.endswith((",", ";", ":")):
+        punctuation_bonus = 10
+
+    return max(0, VOICE_DEFAULT_PAUSE_MS + offset + punctuation_bonus)
+
+
 def _default_voice_plan(chunks: list[str]) -> list[dict]:
     return [
         {
@@ -275,7 +314,7 @@ def _default_voice_plan(chunks: list[str]) -> list[dict]:
             "emotion": "uneasy suspense",
             "speed_multiplier": 1.0,
             "gain_db": 0.0,
-            "pause_after_ms": VOICE_FINAL_PAUSE_MS if i == len(chunks) - 1 else VOICE_DEFAULT_PAUSE_MS,
+            "pause_after_ms": _natural_pause_ms(i, len(chunks), chunk),
             "sfx": "none",
             "sfx_timing": "none",
         }
@@ -536,7 +575,44 @@ def generate_edge(chunk: str, path: Path) -> None:
     asyncio.run(_generate_edge_async(chunk, path))
 
 
+def _camb_voice_id() -> int:
+    try:
+        return int(CAMB_VOICE_ID)
+    except ValueError as exc:
+        raise RuntimeError("CAMB_VOICE_ID must be a numeric voice id from Camb.ai.") from exc
+
+
+def generate_camb(chunk: str, path: Path) -> None:
+    if not CAMB_API_KEY:
+        raise RuntimeError("CAMB_API_KEY is missing. Add it as a GitHub Actions secret.")
+
+    from camb.client import CambAI, save_stream_to_file
+    from camb.types.stream_tts_voice_settings import StreamTtsVoiceSettings
+
+    temp_path = path.with_suffix(".camb.wav")
+    client = CambAI(api_key=CAMB_API_KEY)
+    request = {
+        "text": chunk,
+        "language": CAMB_LANGUAGE,
+        "voice_id": _camb_voice_id(),
+        "speech_model": CAMB_SPEECH_MODEL,
+        "voice_settings": StreamTtsVoiceSettings(speaking_rate=CAMB_SPEAKING_RATE),
+    }
+    if CAMB_USER_INSTRUCTIONS:
+        request["user_instructions"] = CAMB_USER_INSTRUCTIONS
+
+    stream = client.text_to_speech.tts(**request)
+    save_stream_to_file(stream, str(temp_path))
+
+    audio = AudioSegment.from_file(str(temp_path))
+    audio.export(str(path), format="wav")
+    temp_path.unlink(missing_ok=True)
+
+
 def generate_voice_chunk(chunk: str, path: Path):
+    if TTS_BACKEND == "camb":
+        generate_camb(chunk, path)
+        return
     if TTS_BACKEND in {"edge", "edge-tts", "edgetts"}:
         generate_edge(chunk, path)
         return

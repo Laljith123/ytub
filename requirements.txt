@@ -11,3 +11,4 @@ nvidia-riva-client
 grpcio
 protobuf
 edge-tts
+camb-sdk

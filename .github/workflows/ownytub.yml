@@ -48,6 +48,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Verify CAMB TTS Secret
+        shell: pwsh
+        env:
+          CAMB_API_KEY: ${{ secrets.CAMB_API_KEY }}
+        run: |
+          if (-not $env:CAMB_API_KEY) {
+            throw "Missing GitHub secret CAMB_API_KEY. Add your Camb.ai API key as a repository secret."
+          }
+
       # 🎲 Always run, but randomize how many to generate (>=1)
       - name: Random Generate Count
         shell: pwsh
@@ -77,6 +86,7 @@ jobs:
         if: env.RUN_PIPELINE == '1'
         env:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          CAMB_API_KEY: ${{ secrets.CAMB_API_KEY }}
           BLUESMINDS_API_KEY: ${{ secrets.BLUESMINDS_API_KEY }}
           JSON_API_KEY: ${{ secrets.JSON_API_KEY }}
           JSON_BASE_URL: ${{ vars.JSON_BASE_URL }}
@@ -84,8 +94,13 @@ jobs:
           JSON_MODEL_DISCOVERY_ENABLED: "1"
           JSON_MODEL_CANDIDATES: "gpt-4o,gpt-5-chat,grok-4.20-0309-non-reasoning,openai/gpt-4o-mini,gpt-4o-mini"
           JSON_EXTRA_BODY_ENABLED: ${{ vars.JSON_EXTRA_BODY_ENABLED }}
-          VOICE: "EDGE"
-          TTS_BACKEND: "edge"
+          VOICE: "CAMB"
+          TTS_BACKEND: "camb"
+          CAMB_LANGUAGE: "en-us"
+          CAMB_VOICE_ID: ${{ vars.CAMB_VOICE_ID }}
+          CAMB_SPEECH_MODEL: ${{ vars.CAMB_SPEECH_MODEL }}
+          CAMB_SPEAKING_RATE: "0.94"
+          CAMB_USER_INSTRUCTIONS: "Sound like a calm friend explaining a strange true-crime case. Keep the delivery continuous and human, with only tiny natural pauses. Speak slightly slower than normal for clarity, but do not drag the pacing."
           EDGE_TTS_VOICE: "en-US-GuyNeural"
           EDGE_TTS_RATE: "-10%"
           EDGE_TTS_VOLUME: "+0%"
@@ -119,9 +134,10 @@ jobs:
           SUBTITLE_POS_Y: "960"
           VOICE_SPEED: "1.0"
           VOICE_GAIN_DB: "0"
-          VOICE_CROSSFADE_MS: "60"
-          VOICE_DEFAULT_PAUSE_MS: "260"
-          VOICE_FINAL_PAUSE_MS: "420"
+          VOICE_CROSSFADE_MS: "45"
+          VOICE_DEFAULT_PAUSE_MS: "95"
+          VOICE_PAUSE_VARIATION_MS: "55"
+          VOICE_FINAL_PAUSE_MS: "260"
           THUMBNAIL_SOURCE: "image"
           NVIDIA_IMAGE_RETRIES: "10"
           NVIDIA_IMAGE_RETRY_BACKOFF: "3"

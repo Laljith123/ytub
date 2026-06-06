@@ -101,6 +101,9 @@ jobs:
           JSON_MODEL_DISCOVERY_ENABLED: "1"
           JSON_MODEL_CANDIDATES: "gpt-4o,gpt-5-chat,grok-4.20-0309-non-reasoning,openai/gpt-4o-mini,gpt-4o-mini"
           JSON_EXTRA_BODY_ENABLED: ${{ vars.JSON_EXTRA_BODY_ENABLED }}
+          FREETHEAI_RPM_LIMIT: "10"
+          RATE_LIMIT_CUSHION_SECONDS: "12"
+          FREETHEAI_MAX_ATTEMPTS: "4"
           VOICE: "FreeTheAi"
           TTS_BACKEND: "freetheai"
           TTS_FALLBACK_BACKENDS: "camb,edge"
@@ -108,6 +111,7 @@ jobs:
           FREETHEAI_TTS_VOICE: ${{ vars.FREETHEAI_TTS_VOICE || 'default' }}
           FREETHEAI_TTS_RESPONSE_FORMAT: "wav"
           FREETHEAI_TTS_TIMEOUT: "180"
+          FREETHEAI_TTS_MAX_ATTEMPTS: "4"
           FREETHEAI_TTS_INSTRUCTIONS: "Speak like a calm friend explaining a strange true-crime case. Keep it continuous, natural, and easy to understand. Use a slightly slower pace with tiny human pauses, never a news-reader tone."
           CAMB_LANGUAGE: "en-us"
           CAMB_VOICE_ID: ${{ vars.CAMB_VOICE_ID }}

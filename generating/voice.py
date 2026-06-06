@@ -5,11 +5,17 @@ import re
 import requests
 import shutil
 import subprocess
+import time
 import unicodedata
 from pathlib import Path
 
 from pydub import AudioSegment
 from pydub.silence import detect_nonsilent
+
+try:
+    from rate_limit import retry_after_seconds, wait_for_provider_slot
+except ImportError:  # pragma: no cover - used when imported as generating.voice
+    from generating.rate_limit import retry_after_seconds, wait_for_provider_slot
 
 from json_ai import (
     json_api_key,
@@ -603,21 +609,33 @@ def generate_freetheai(chunk: str, path: Path) -> None:
     if FREETHEAI_TTS_INSTRUCTIONS:
         payload["instructions"] = FREETHEAI_TTS_INSTRUCTIONS
 
-    response = requests.post(
-        FREETHEAI_TTS_URL,
-        headers={
-            "Authorization": f"Bearer {FREETHEAI_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        json=payload,
-        timeout=FREETHEAI_TTS_TIMEOUT,
-    )
-    if response.status_code >= 400:
+    headers = {
+        "Authorization": f"Bearer {FREETHEAI_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    attempts = max(1, int(os.getenv("FREETHEAI_TTS_MAX_ATTEMPTS", "3")))
+    response = None
+    for attempt in range(1, attempts + 1):
+        wait_for_provider_slot("FreeTheAi", rpm_env="FREETHEAI_RPM_LIMIT", default_rpm=10)
+        response = requests.post(
+            FREETHEAI_TTS_URL,
+            headers=headers,
+            json=payload,
+            timeout=FREETHEAI_TTS_TIMEOUT,
+        )
+        if response.status_code != 429:
+            break
+        sleep_for = retry_after_seconds(response.headers.get("Retry-After"))
+        print(f"FreeTheAi rate limit hit during TTS; waiting {sleep_for:.1f}s ({attempt}/{attempts}).")
+        time.sleep(sleep_for)
+
+    if response is None or response.status_code >= 400:
         try:
-            detail = response.json()
+            detail = response.json() if response is not None else "No response"
         except ValueError:
             detail = response.text
-        raise RuntimeError(f"FreeTheAi TTS failed ({response.status_code}): {detail}")
+        status_code = response.status_code if response is not None else "unknown"
+        raise RuntimeError(f"FreeTheAi TTS failed ({status_code}): {detail}")
 
     ext = FREETHEAI_TTS_RESPONSE_FORMAT.lstrip(".") or "mp3"
     temp_path = path.with_suffix(f".freetheai.{ext}")

@@ -1,8 +1,14 @@
 import os
+import time
 from typing import Any
 
 import requests
 from openai import OpenAI
+
+try:
+    from rate_limit import retry_after_seconds, wait_for_provider_slot
+except ImportError:  # pragma: no cover - used when imported as generating.json_ai
+    from generating.rate_limit import retry_after_seconds, wait_for_provider_slot
 
 
 FREETHEAI_BASE_URL = "https://api.freetheai.xyz/v1"
@@ -141,6 +147,8 @@ def _load_available_models(base_url: str, api_key: str) -> set[str]:
         return _MODEL_CACHE[cache_key]
 
     try:
+        if is_freetheai_base_url(base_url):
+            wait_for_provider_slot("FreeTheAi", rpm_env="FREETHEAI_RPM_LIMIT", default_rpm=10)
         response = requests.get(
             _models_endpoint(base_url),
             headers={"Authorization": f"Bearer {api_key}"},
@@ -235,6 +243,35 @@ def json_create_chat_completion(base_url: str, api_key: str, request: dict[str, 
         if response.status_code >= 400:
             raise RuntimeError(f"HTTP {response.status_code}: {response.text[:500]}")
         return response.json()
+
+    if is_freetheai_base_url(base_url):
+        body = {key: value for key, value in request.items() if value is not None}
+        if body.get("stream"):
+            body["stream"] = False
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        attempts = max(1, int(float(os.getenv("FREETHEAI_MAX_ATTEMPTS", "3"))))
+        for attempt in range(1, attempts + 1):
+            wait_for_provider_slot("FreeTheAi", rpm_env="FREETHEAI_RPM_LIMIT", default_rpm=10)
+            response = requests.post(
+                _chat_completions_endpoint(base_url),
+                headers=headers,
+                json=body,
+                timeout=float(os.getenv("JSON_COMPLETION_TIMEOUT", "90")),
+            )
+            if response.status_code != 429:
+                if response.status_code >= 400:
+                    raise RuntimeError(f"HTTP {response.status_code}: {response.text[:500]}")
+                return response.json()
+
+            sleep_for = retry_after_seconds(response.headers.get("Retry-After"))
+            print(f"FreeTheAi rate limit hit during JSON call; waiting {sleep_for:.1f}s ({attempt}/{attempts}).")
+            time.sleep(sleep_for)
+
+        raise RuntimeError(f"FreeTheAi JSON request failed after {attempts} rate-limit retries.")
 
     client = OpenAI(base_url=base_url, api_key=api_key)
     return client.chat.completions.create(**request)

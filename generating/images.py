@@ -11,6 +11,11 @@ from typing import Any, Dict, List
 import requests
 from dotenv import load_dotenv
 
+try:
+    from rate_limit import retry_after_seconds, wait_for_provider_slot
+except ImportError:  # pragma: no cover - used when imported as generating.images
+    from generating.rate_limit import retry_after_seconds, wait_for_provider_slot
+
 INVOKE_URL = "https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-schnell"
 FREETHEAI_BASE_URL = os.getenv("FREETHEAI_BASE_URL", "https://api.freetheai.xyz/v1").rstrip("/")
 FREETHEAI_IMAGE_URL = os.getenv("FREETHEAI_IMAGE_URL", f"{FREETHEAI_BASE_URL}/images/generations")
@@ -364,16 +369,17 @@ def _post_with_retries(
     current_timeout = timeout
     for attempt in range(1, retries + 1):
         try:
+            if "api.freetheai.xyz" in str(url).lower():
+                wait_for_provider_slot("FreeTheAi", rpm_env="FREETHEAI_RPM_LIMIT", default_rpm=10)
             response = requests.post(url, headers=headers, json=payload, timeout=current_timeout)
             if response.status_code in {429, 500, 502, 503, 504}:
                 if attempt == retries:
                     return response
                 retry_after = response.headers.get("Retry-After")
-                if retry_after:
-                    try:
-                        sleep_for = float(retry_after)
-                    except ValueError:
-                        sleep_for = backoff * attempt
+                if response.status_code == 429:
+                    sleep_for = retry_after_seconds(retry_after)
+                elif retry_after:
+                    sleep_for = retry_after_seconds(retry_after, default=backoff * attempt)
                 else:
                     sleep_for = backoff * attempt
                 print(

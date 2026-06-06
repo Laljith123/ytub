@@ -227,11 +227,12 @@ def main() -> None:
     for index in range(1, max(GENERATE_COUNT, 1) + 1):
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         _run("generating/trend.py")
-        _run("generating/images.py")
 
         voice_env = os.environ.copy()
         voice_env["VOICE_CLEANUP"] = "0"
         _run_voice_with_retries(voice_env)
+
+        _run("generating/images.py")
 
         if BACKGROUND_MUSIC_ENABLED:
             _run("generating/music.py")

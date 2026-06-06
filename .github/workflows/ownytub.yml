@@ -149,7 +149,7 @@ jobs:
           CONTENT_RETENTION_TRIGGER_MAX_COUNT: "6"
 
           # Voice.py Chatterbox voice-plan config
-          VOICE_PLAN_ENABLED: "1"
+          VOICE_PLAN_ENABLED: "0"
           VOICE_PLAN_MODEL: ${{ vars.VOICE_PLAN_MODEL }}
           VOICE_PLAN_BASE_URL: ${{ vars.VOICE_PLAN_BASE_URL }}
           VOICE_PLAN_MAX_ATTEMPTS: "3"

@@ -1,0 +1,246 @@
+name: ownytub-shorts
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 🌅 Morning window (1–7 AM IST → 19–1 UTC)
+    - cron: "0 19-23 * * *"
+    - cron: "0 0-1 * * *"
+
+    # 🌇 Evening window (2–7 PM IST → 8–13 UTC)
+    - cron: "0 8-13 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ownytub-shorts
+  cancel-in-progress: false
+
+jobs:
+  build-and-upload:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install FFmpeg
+        run: choco install ffmpeg -y
+
+      - name: Cache Pip
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\pip\Cache
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # 🎲 Always run, but randomize how many to generate (>=1)
+      - name: Random Generate Count
+        shell: pwsh
+        run: |
+          $min = 1
+          $max = 5
+          $random = Get-Random -Minimum $min -Maximum ($max + 1)
+          echo "RUN_PIPELINE=1" >> $env:GITHUB_ENV
+          echo "GENERATE_COUNT=$random" >> $env:GITHUB_ENV
+          echo "Generate count set to: $random"
+
+      # 🎯 Random upload limit (2–5)
+      - name: Set Random Upload Limits
+        if: env.RUN_PIPELINE == '1'
+        shell: pwsh
+        run: |
+          $min = 1
+          $max = 1
+          $random = Get-Random -Minimum $min -Maximum ($max + 1)
+
+          echo "YOUTUBE_UPLOADS_PER_DAY=$random" >> $env:GITHUB_ENV
+          echo "YOUTUBE_MAX_SUCCESS=$random" >> $env:GITHUB_ENV
+
+          echo "Random upload limit set to: $random"
+
+      - name: Run Pipeline + Upload
+        if: env.RUN_PIPELINE == '1'
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          BLUESMINDS_API_KEY: ${{ secrets.BLUESMINDS_API_KEY }}
+          JSON_API_KEY: ${{ secrets.JSON_API_KEY }}
+          JSON_BASE_URL: ${{ vars.JSON_BASE_URL }}
+          JSON_MODEL: ${{ vars.JSON_MODEL }}
+          JSON_EXTRA_BODY_ENABLED: ${{ vars.JSON_EXTRA_BODY_ENABLED }}
+          VOICE: "CHATTERBOX"
+          RIVA_VOICE: "Chatterbox-Multilingual.en-US.Male"
+          RIVA_LANGUAGE: "en-US"
+          YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN_JSON }}
+          YOUTUBE_CHANNEL_ID: ${{ vars.YOUTUBE_CHANNEL_ID }}
+          YOUTUBE_HISTORY_ENABLED: "1"
+          YOUTUBE_HISTORY_LIMIT: "200"
+          YOUTUBE_HISTORY_PROMPT_LIMIT: "40"
+          UPLOAD_QUEUE_DIR: ${{ github.workspace }}\output\queue
+          THUMBNAIL_PATH: ${{ github.workspace }}\output\thumbnail.jpg
+          YOUTUBE_TOKEN_FILE: ${{ github.workspace }}\output\youtube_token.json
+          HISTORY_JSON_PATH: ${{ github.workspace }}\generating\history.json
+          UPLOAD_HISTORY_FILE: ${{ github.workspace }}\generating\history.json
+          SAVE_UPLOAD_HISTORY: "1"
+          CLEAN_OUTPUT_AFTER_UPLOAD: "1"
+          CLEAN_OUTPUT_JSON_AFTER_UPLOAD: "1"
+          PERSIST_HISTORY_FILES: ${{ github.workspace }}\generating\history.json
+          RUN_UPLOAD: "1"
+          UPLOAD_EACH: "1"
+          YOUTUBE_LOOP: "0"
+          VIDEO_MIN_SECONDS: "40"
+          VIDEO_MAX_SECONDS: "50"
+          VIDEO_CLIP_SECONDS: "5"
+          VIDEO_WIDTH: "1080"
+          VIDEO_HEIGHT: "1920"
+          SUBTITLE_RES_X: "1080"
+          SUBTITLE_RES_Y: "1920"
+          SUBTITLE_POS_Y: "960"
+          VOICE_SPEED: "1.25"
+          VOICE_GAIN_DB: "-3"
+          THUMBNAIL_SOURCE: "image"
+          NVIDIA_IMAGE_RETRIES: "10"
+          NVIDIA_IMAGE_RETRY_BACKOFF: "3"
+          NVIDIA_IMAGE_DELAY: "3"
+          CONTENT_ENABLE_THINKING: "1"
+          CONTENT_STREAM: "0"
+          TRENDS_USE_PYTRENDS: "0"
+          BACKGROUND_MUSIC_ENABLED: "1"
+          BACKGROUND_MUSIC_GAIN: "1.6"
+          BACKGROUND_MUSIC_VOLUME: "0.25"
+          OPENVERSE_MUSIC_LICENSES: "cc0,by"
+          OPENVERSE_MUSIC_MIN_SECONDS: "30"
+          OPENVERSE_MUSIC_MAX_SECONDS: "600"
+          OPENVERSE_MUSIC_PAGE_SIZE: "20"
+          OPENVERSE_MUSIC_PAGES: "3"
+          # Shared JSON prompt config. Leave vars empty to use automatic defaults.
+          CONTENT_MODEL: ${{ vars.CONTENT_MODEL }}
+          NVIDIA_BASE_URL: "https://integrate.api.nvidia.com/v1"
+
+          # Content.py new fields / retention config
+          CONTENT_MAX_ATTEMPTS: "3"
+          CONTENT_TITLE_MAX_CHARS: "80"
+          CONTENT_HOOK_MAX_WORDS: "18"
+          CONTENT_CAPTION_MAX_CHARS: "220"
+          CONTENT_THUMBNAIL_TEXT_MAX_WORDS: "5"
+          CONTENT_HASHTAG_MIN_COUNT: "8"
+          CONTENT_HASHTAG_MAX_COUNT: "15"
+          CONTENT_RETENTION_TRIGGER_MIN_COUNT: "3"
+          CONTENT_RETENTION_TRIGGER_MAX_COUNT: "6"
+
+          # Voice.py Chatterbox voice-plan config
+          VOICE_PLAN_ENABLED: "1"
+          VOICE_PLAN_MODEL: ${{ vars.VOICE_PLAN_MODEL }}
+          VOICE_PLAN_BASE_URL: ${{ vars.VOICE_PLAN_BASE_URL }}
+          VOICE_PLAN_MAX_ATTEMPTS: "3"
+          VOICE_PLAN_MAX_TOKENS: "4096"
+          VOICE_PLAN_TEMPERATURE: "0.35"
+          VOICE_PLAN_TOP_P: "0.9"
+          VOICE_PLAN_ENABLE_THINKING: "1"
+          VOICE_PLAN_REASONING_BUDGET: "4096"
+          VOICE_PLAN_MIN_SPEED_MULTIPLIER: "0.82"
+          VOICE_PLAN_MAX_SPEED_MULTIPLIER: "1.12"
+          VOICE_PLAN_MIN_GAIN_DB: "-2.5"
+          VOICE_PLAN_MAX_GAIN_DB: "2.5"
+          VOICE_PLAN_MIN_PAUSE_MS: "0"
+          VOICE_PLAN_MAX_PAUSE_MS: "700"
+          VOICE_SFX_ENABLED: "0"
+
+          # Chatterbox Riva API details
+          RIVA_URI: "grpc.nvcf.nvidia.com:443"
+          RIVA_FUNCTION_ID: "ddacc747-1269-4fab-bfd9-8f593dead106"
+          RIVA_SAMPLE_RATE_HZ: "24000"
+          RIVA_USE_SSL: "1"
+
+          # Thumbnail.py AI planner config
+          THUMBNAIL_PLAN_ENABLED: "1"
+          THUMBNAIL_PLAN_MODEL: ${{ vars.THUMBNAIL_PLAN_MODEL }}
+          THUMBNAIL_PLAN_BASE_URL: ${{ vars.THUMBNAIL_PLAN_BASE_URL }}
+          THUMBNAIL_PLAN_MAX_ATTEMPTS: "3"
+          THUMBNAIL_PLAN_MAX_TOKENS: "2048"
+          THUMBNAIL_PLAN_REASONING_BUDGET: "2048"
+          THUMBNAIL_PLAN_TEMPERATURE: "0.35"
+          THUMBNAIL_PLAN_TOP_P: "0.9"
+          THUMBNAIL_PLAN_ENABLE_THINKING: "1"
+          THUMBNAIL_PLAN_PICK_IMAGE: "1"
+          THUMBNAIL_PLAN_USE_POSITION: "1"
+          THUMBNAIL_PLAN_TEXT_MAX_WORDS: "4"
+          THUMBNAIL_PLAN_SUBTEXT_MAX_WORDS: "4"
+          THUMBNAIL_PLAN_FIELD: "thumbnail_text"
+          THUMBNAIL_UPPERCASE: "1"
+
+          # Trend.py collector + AI judge config
+          TRENDS_USE_GOOGLE_NEWS: "1"
+          TRENDS_USE_YOUTUBE_SUGGEST: "1"
+          TRENDS_USE_AI_JUDGE: "1"
+          TRENDS_KEYWORD_SAMPLE: "8"
+          TRENDS_KEYWORD_MODE: "random"
+          TRENDS_NEWS_LIMIT_PER_KEYWORD: "8"
+          TRENDS_YT_SUGGEST_LIMIT_PER_KEYWORD: "10"
+          TRENDS_AI_MODEL: ${{ vars.TRENDS_AI_MODEL }}
+          TRENDS_AI_BASE_URL: ${{ vars.TRENDS_AI_BASE_URL }}
+          TRENDS_AI_MAX_ATTEMPTS: "3"
+          TRENDS_AI_MAX_TOKENS: "4096"
+          TRENDS_AI_TEMPERATURE: "0.25"
+          TRENDS_AI_TOP_P: "0.9"
+          TRENDS_AI_ENABLE_THINKING: "1"
+          TRENDS_AI_REASONING_BUDGET: "4096"
+          TRENDS_AI_CANDIDATE_LIMIT: "60"
+          TRENDS_SELECTED_COUNT: "5"
+          TRENDS_COLLISION_SIM: "0.72"
+          TRENDS_USED_PROMPT_LIMIT: "120"
+          TRENDS_AI_REQUIRE_SOURCE_MATCH: "1"
+          OUTPUT_JSON_PATH: ${{ github.workspace }}\output.json
+          #youtube
+          YOUTUBE_METADATA_AI_ENABLED: "1"
+          YOUTUBE_METADATA_MODEL: ${{ vars.YOUTUBE_METADATA_MODEL }}
+          YOUTUBE_METADATA_BASE_URL: ${{ vars.YOUTUBE_METADATA_BASE_URL }}
+          YOUTUBE_METADATA_MAX_ATTEMPTS: "3"
+          YOUTUBE_METADATA_MAX_TOKENS: "4096"
+          YOUTUBE_METADATA_TEMPERATURE: "0.35"
+          YOUTUBE_METADATA_TOP_P: "0.9"
+          YOUTUBE_METADATA_ENABLE_THINKING: "1"
+          YOUTUBE_METADATA_REASONING_BUDGET: "4096"
+          YOUTUBE_METADATA_TITLE_MAX_CHARS: "75"
+          YOUTUBE_METADATA_DESCRIPTION_MAX_CHARS: "1200"
+          YOUTUBE_METADATA_TAG_MIN_COUNT: "8"
+          YOUTUBE_METADATA_TAG_MAX_COUNT: "15"
+          YOUTUBE_METADATA_HASHTAG_MIN_COUNT: "8"
+          YOUTUBE_METADATA_HASHTAG_MAX_COUNT: "15"
+        run: python pipeline.py
+
+      - name: Persist Upload History
+        if: env.RUN_PIPELINE == '1'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "generating/history.json")) {
+            echo "No upload history file found."
+            exit 0
+          }
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add generating/history.json
+
+          if (git diff --cached --quiet) {
+            echo "No upload history changes to commit."
+            exit 0
+          }
+
+          git commit -m "Update upload history"
+          git pull --rebase
+          git push

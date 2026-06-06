@@ -1,0 +1,12 @@
+feedparser
+pytrends
+openai
+python-dotenv
+pydub
+requests
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+nvidia-riva-client
+grpcio
+protobuf

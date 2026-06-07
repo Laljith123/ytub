@@ -141,8 +141,8 @@ jobs:
           HISTORY_JSON_PATH: ${{ github.workspace }}\generating\history.json
           UPLOAD_HISTORY_FILE: ${{ github.workspace }}\generating\history.json
           SAVE_UPLOAD_HISTORY: "1"
-          YOUTUBE_TAGS: ${{ vars.YOUTUBE_TAGS || 'shorts,ytshorts,youtubeshorts,shortsvideo,viral,trending,explained,story,interesting,documentary,learnsomething,newfacts,curiosity' }}
-          YOUTUBE_HASHTAGS: ${{ vars.YOUTUBE_HASHTAGS || '#shorts #ytshorts #youtubeshorts #shortsvideo #viral #trending #explained #interesting #facts #curiosity' }}
+          YOUTUBE_TAGS: "${{ vars.YOUTUBE_TAGS || 'shorts,ytshorts,youtubeshorts,shortsvideo,viral,trending,explained,story,interesting,documentary,learnsomething,newfacts,curiosity' }}"
+          YOUTUBE_HASHTAGS: "${{ vars.YOUTUBE_HASHTAGS || '#shorts #ytshorts #youtubeshorts #shortsvideo #viral #trending #explained #interesting #facts #curiosity' }}"
           CLEAN_OUTPUT_AFTER_UPLOAD: "1"
           CLEAN_OUTPUT_JSON_AFTER_UPLOAD: "1"
           PERSIST_HISTORY_FILES: ${{ github.workspace }}\generating\history.json

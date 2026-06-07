@@ -349,72 +349,88 @@ def _final_scene_invites_comments(script: list) -> bool:
             "notice",
             "noticed",
             "missed",
+            "think",
+            "thinks",
+            "opinion",
+            "opinions",
+            "take",
+            "takes",
+            "explain",
+            "explained",
         }
     )
-    has_viewer_address = bool(tokens & {"guys", "you", "your", "everyone", "someone", "anyone"})
+    has_viewer_address = bool(tokens & {"guys", "you", "your", "everyone", "someone", "anyone", "we"})
     return has_question and has_comment_hook and has_viewer_address
 
 
-def is_valid(data):
+def _validation_reason(data) -> str:
     if not isinstance(data, dict):
-        return False
+        return "response is not a JSON object"
     if set(data.keys()) != REQUIRED_FIELDS:
-        return False
+        missing = sorted(REQUIRED_FIELDS - set(data.keys()))
+        extra = sorted(set(data.keys()) - REQUIRED_FIELDS)
+        return f"field mismatch missing={missing} extra={extra}"
 
     title = str(data.get("title") or "").strip()
     if not title or len(title) > TITLE_MAX_CHARS:
-        return False
+        return f"title missing or over {TITLE_MAX_CHARS} characters"
 
     hook = str(data.get("hook") or "").strip()
     if not hook or _word_count(hook) > HOOK_MAX_WORDS:
-        return False
+        return f"hook missing or over {HOOK_MAX_WORDS} words"
 
     script = data.get("script")
     image = data.get("image")
     if not isinstance(script, list) or not isinstance(image, list):
-        return False
+        return "script and image must be lists"
     if not (MIN_SCENES <= len(script) <= MAX_SCENES):
-        return False
+        return f"script must contain {MIN_SCENES}-{MAX_SCENES} scenes, got {len(script)}"
     if len(script) != len(image):
-        return False
+        return f"script/image length mismatch: {len(script)} vs {len(image)}"
     if not all(bool(str(item or "").strip()) for item in script):
-        return False
+        return "script contains empty scene"
     if not all(bool(str(item or "").strip()) for item in image):
-        return False
+        return "image contains empty prompt"
     if _contains_banned_script_phrase(script):
-        return False
+        return "script contains banned phrase"
     if not _final_scene_invites_comments(script):
-        return False
+        return "final script scene must ask viewers a comment/theory/thought question"
 
     caption = str(data.get("caption") or "").strip()
     if not caption or len(caption) > CAPTION_MAX_CHARS:
-        return False
+        return f"caption missing or over {CAPTION_MAX_CHARS} characters"
 
     thumbnail_text = str(data.get("thumbnail_text") or "").strip()
     if not thumbnail_text or _word_count(thumbnail_text) > THUMBNAIL_TEXT_MAX_WORDS:
-        return False
+        return f"thumbnail_text missing or over {THUMBNAIL_TEXT_MAX_WORDS} words"
 
     if not _valid_hashtags(data.get("hashtags")):
-        return False
+        count = len(data.get("hashtags")) if isinstance(data.get("hashtags"), list) else "not-list"
+        return f"hashtags invalid; expected {HASHTAG_MIN_COUNT}-{HASHTAG_MAX_COUNT}, got {count}"
 
     if not _valid_string_list(
         data.get("retention_triggers"),
         RETENTION_TRIGGER_MIN_COUNT,
         RETENTION_TRIGGER_MAX_COUNT,
     ):
-        return False
+        count = len(data.get("retention_triggers")) if isinstance(data.get("retention_triggers"), list) else "not-list"
+        return f"retention_triggers invalid; expected {RETENTION_TRIGGER_MIN_COUNT}-{RETENTION_TRIGGER_MAX_COUNT}, got {count}"
 
     bg = str(data.get("background_music") or "").strip()
     bg_words = _word_count(bg)
     if not bg or not _is_plain_ascii_words(bg):
-        return False
+        return "background_music must be plain ASCII words only"
     if not (BACKGROUND_MUSIC_MIN_WORDS <= bg_words <= BACKGROUND_MUSIC_MAX_WORDS):
-        return False
+        return f"background_music must be {BACKGROUND_MUSIC_MIN_WORDS}-{BACKGROUND_MUSIC_MAX_WORDS} words, got {bg_words}"
 
     trend = str(data.get("trend") or "").strip()
     if not trend or trend.isdigit():
-        return False
-    return True
+        return "trend missing or numeric"
+    return ""
+
+
+def is_valid(data):
+    return _validation_reason(data) == ""
 
 
 def _normalize(text: str) -> str:
@@ -714,6 +730,197 @@ def _fit_text(text: object, limit: int) -> str:
     if " " in clipped:
         clipped = clipped.rsplit(" ", 1)[0]
     return clipped.rstrip(" ,;:-|") or value[:limit].rstrip(" ,;:-|")
+
+
+def _unwrap_content_payload(data) -> dict:
+    if not isinstance(data, dict):
+        return {}
+    if REQUIRED_FIELDS <= set(data.keys()):
+        return data
+    for key in ("content", "video", "short", "result", "data", "item"):
+        value = data.get(key)
+        if isinstance(value, dict):
+            unwrapped = _unwrap_content_payload(value)
+            if unwrapped:
+                return unwrapped
+    for key in ("items", "videos", "shorts", "results"):
+        value = data.get(key)
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, dict):
+                    unwrapped = _unwrap_content_payload(item)
+                    if unwrapped:
+                        return unwrapped
+    return data
+
+
+def _coerce_string_list(value) -> list[str]:
+    def split_text(text: object) -> list[str]:
+        return [
+            _compact_text(part)
+            for part in re.split(r"\n+|(?<=[.!?])\s+(?=[A-Z0-9\"'])", str(text or ""))
+            if _compact_text(part)
+        ]
+
+    if isinstance(value, list):
+        parts: list[str] = []
+        for item in value:
+            parts.extend(split_text(item))
+        return parts
+    if isinstance(value, str):
+        return split_text(value)
+    return []
+
+
+def _topic_seed(data: dict, trends: list) -> str:
+    for value in (data.get("trend"), data.get("title"), data.get("hook")):
+        clean = _compact_text(value)
+        if clean:
+            return clean
+    cleaned = _clean_trend_list(trends, allow_numeric=False)
+    return cleaned[0] if cleaned else "today's trend"
+
+
+def _clean_hashtag_value(value: object) -> str:
+    text = str(value or "").strip().lstrip("#")
+    text = re.sub(r"[^A-Za-z0-9]", "", text)
+    if not text:
+        return ""
+    return f"#{text[:28]}"
+
+
+def _coerce_hashtags(value, seed: str) -> list[str]:
+    raw_items = value
+    if isinstance(value, str):
+        raw_items = re.split(r"[\s,;|]+", value)
+    if not isinstance(raw_items, list):
+        raw_items = []
+
+    tags: list[str] = []
+    seen: set[str] = set()
+
+    def add(item: object) -> None:
+        tag = _clean_hashtag_value(item)
+        norm = tag.lower()
+        if tag and norm not in seen:
+            seen.add(norm)
+            tags.append(tag)
+
+    for item in raw_items:
+        add(item)
+
+    for token in re.findall(r"[A-Za-z0-9]+", seed):
+        if len(token) >= 4 and token.lower() not in CONCEPT_STOPWORDS:
+            add(token.title())
+
+    for tag in (
+        "Shorts",
+        "YouTubeShorts",
+        "Explained",
+        "Interesting",
+        "Facts",
+        "Curiosity",
+        "Trending",
+        "DocumentaryShorts",
+        "LearnSomething",
+        "StoryTime",
+        "InternetCulture",
+        "TechExplained",
+        "WorldNews",
+        "ViralStory",
+        "DeepDive",
+    ):
+        add(tag)
+        if len(tags) >= HASHTAG_MIN_COUNT:
+            break
+
+    return tags[:HASHTAG_MAX_COUNT]
+
+
+def _coerce_music(value: object, seed: str) -> str:
+    text = re.sub(r"[^A-Za-z0-9 ]", " ", str(value or ""))
+    words = [word for word in text.split() if word]
+    if len(words) < BACKGROUND_MUSIC_MIN_WORDS:
+        words.extend(["curious", "documentary", "ambient", "pulse", "soft", "tension"])
+    if len(words) > BACKGROUND_MUSIC_MAX_WORDS:
+        words = words[:BACKGROUND_MUSIC_MAX_WORDS]
+    return " ".join(words) or _fallback_music(seed)
+
+
+def _coerce_final_question(script: list[str]) -> list[str]:
+    if not script:
+        return script
+    if _final_scene_invites_comments(script):
+        return script
+    final = script[-1].rstrip()
+    if final and not final.endswith("?"):
+        final = f"{final} "
+    script[-1] = (
+        f"{final}Guys, what detail do you think matters most here?"
+        if final
+        else "Guys, what detail do you think matters most here?"
+    )
+    return script
+
+
+def _coerce_images(images: list[str], script: list[str], seed: str) -> list[str]:
+    if not script:
+        return images
+    if len(images) > len(script):
+        return images[: len(script)]
+    while len(images) < len(script):
+        scene = script[len(images)]
+        images.append(
+            "photorealistic documentary b-roll of "
+            f"{_fit_text(seed, 60)}, visual detail from: {_fit_text(scene, 90)}, "
+            "natural location, soft realistic light, vertical 9:16 framing, slow dolly"
+        )
+    return images
+
+
+def _repair_content_json(data, trends: list) -> dict:
+    item = _unwrap_content_payload(data)
+    if not isinstance(item, dict):
+        return {}
+
+    seed = _topic_seed(item, trends)
+    repaired = {key: item.get(key) for key in REQUIRED_FIELDS}
+
+    repaired["title"] = _fit_text(repaired.get("title") or seed, TITLE_MAX_CHARS)
+    repaired["hook"] = _fit_text(repaired.get("hook") or f"One detail in {seed} is worth a closer look.", 140)
+    if _word_count(repaired["hook"]) > HOOK_MAX_WORDS:
+        repaired["hook"] = " ".join(repaired["hook"].split()[:HOOK_MAX_WORDS])
+
+    script = _coerce_string_list(repaired.get("script"))
+    images = _coerce_string_list(repaired.get("image"))
+    if len(script) > MAX_SCENES:
+        script = script[:MAX_SCENES]
+    script = _coerce_final_question(script)
+    images = _coerce_images(images, script, seed)
+    repaired["script"] = script
+    repaired["image"] = images
+
+    repaired["caption"] = _fit_text(
+        repaired.get("caption") or f"{seed}: what detail did you notice first?",
+        CAPTION_MAX_CHARS,
+    )
+    repaired["thumbnail_text"] = " ".join(
+        (_compact_text(repaired.get("thumbnail_text")) or "WATCH THIS").split()[:THUMBNAIL_TEXT_MAX_WORDS]
+    )
+    repaired["hashtags"] = _coerce_hashtags(repaired.get("hashtags"), seed)
+    retention = _coerce_string_list(repaired.get("retention_triggers"))
+    while len(retention) < RETENTION_TRIGGER_MIN_COUNT:
+        retention.append(
+            [
+                "Opens with a clear curiosity gap",
+                "Adds one new concrete fact per scene",
+                "Ends with a viewer question",
+            ][len(retention) % 3]
+        )
+    repaired["retention_triggers"] = retention[:RETENTION_TRIGGER_MAX_COUNT]
+    repaired["trend"] = _fit_text(repaired.get("trend") or seed, 120)
+    repaired["background_music"] = _coerce_music(repaired.get("background_music"), seed)
+    return repaired
 
 
 def _clean_case_for_fallback(item) -> str:
@@ -1535,7 +1742,7 @@ def _build_prompt(trends: list[str], repeated: list[str], channel_titles: list[s
         f"17. Camera cues can follow this style: {camera_cue_line}. "
         "18. People, clothing, props, weather, and locations MUST stay consistent across scenes where applicable. "
         "19. Do NOT show graphic, disturbing, exploitative, or inappropriate imagery. "
-        "20. Do NOT mention movies, actors, TV shows, fictional elements, or unrelated pop culture. "
+        "20. Do NOT mention unrelated pop culture. If the chosen topic itself is about media, art, celebrities, or internet culture, discuss it factually and avoid copying copyrighted characters, logos, or exact visual styles in image prompts. "
         "21. Do NOT include scene labels, timestamps, camera metadata labels, or quotes outside JSON. "
         f"22. caption MUST be under {CAPTION_MAX_CHARS} characters and should invite comments without begging. "
         f"23. thumbnail_text MUST be {THUMBNAIL_TEXT_MAX_WORDS} words or fewer, high curiosity, no false claim. "
@@ -1545,7 +1752,7 @@ def _build_prompt(trends: list[str], repeated: list[str], channel_titles: list[s
         f"27. background_music MUST be {BACKGROUND_MUSIC_MIN_WORDS}-{BACKGROUND_MUSIC_MAX_WORDS} plain ASCII words only, no punctuation, no emojis, no quotes, no special characters. "
         "28. Do NOT repeat or paraphrase titles, lines, topics, or image prompts from earlier videos. "
         f"29. If none of the provided trends are usable, pick ANY real, source-backed topic that does NOT appear in upload history or output.json{history_suffix}. "
-        "30. If you cannot comply with ALL rules, return an empty JSON object {} ONLY. "
+        "30. If one trend conflicts with these rules, choose a safer trend from the provided list. Return {} ONLY if no provided or fresh source-backed topic can work. "
         "31. If you start repeating or looping, STOP and return {} ONLY. "
         "32. Output MUST be valid JSON and nothing else."
     )
@@ -1655,7 +1862,9 @@ def contents(trends):
                 print(f"\nempty response, retrying ({attempt}/{max_attempts})...\n")
                 continue
             parsed = extract_json(s, trends)
-            if parsed and is_valid(parsed):
+            parsed = _repair_content_json(parsed, trends)
+            validation_reason = _validation_reason(parsed) if parsed else "invalid or empty JSON object"
+            if parsed and not validation_reason:
                 ok, reason = _validate_no_repeats(parsed, comparison_data, channel_titles)
                 if not ok:
                     retry_reason = reason
@@ -1663,7 +1872,8 @@ def contents(trends):
                     continue
                 data = parsed
                 break
-            print(f"\nretrying ({attempt}/{max_attempts})...\n")
+            retry_reason = validation_reason
+            print(f"\nretrying ({attempt}/{max_attempts})... {validation_reason}\n")
 
     if data is None:
         data = _build_local_fallback_content(

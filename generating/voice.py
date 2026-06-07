@@ -47,29 +47,29 @@ TTS_FALLBACK_BACKENDS = [
     for item in os.getenv("TTS_FALLBACK_BACKENDS", "camb,edge").split(",")
     if item.strip()
 ]
-VOICE_SPEED = float(os.getenv("VOICE_SPEED", "1.0"))
+VOICE_SPEED = float(os.getenv("VOICE_SPEED", "1.08"))
 VOICE_GAIN_DB = float(os.getenv("VOICE_GAIN_DB", "0"))
 VOICE_CROSSFADE_MS = int(os.getenv("VOICE_CROSSFADE_MS", "60"))
-VOICE_DEFAULT_PAUSE_MS = int(os.getenv("VOICE_DEFAULT_PAUSE_MS", "110"))
-VOICE_PAUSE_VARIATION_MS = int(os.getenv("VOICE_PAUSE_VARIATION_MS", "55"))
-VOICE_FINAL_PAUSE_MS = int(os.getenv("VOICE_FINAL_PAUSE_MS", "280"))
+VOICE_DEFAULT_PAUSE_MS = int(os.getenv("VOICE_DEFAULT_PAUSE_MS", "75"))
+VOICE_PAUSE_VARIATION_MS = int(os.getenv("VOICE_PAUSE_VARIATION_MS", "35"))
+VOICE_FINAL_PAUSE_MS = int(os.getenv("VOICE_FINAL_PAUSE_MS", "190"))
 
 CAMB_API_KEY = os.getenv("CAMB_API_KEY", "").strip().strip("\"'")
 CAMB_LANGUAGE = os.getenv("CAMB_LANGUAGE", "en-us").strip() or "en-us"
 CAMB_VOICE_ID = os.getenv("CAMB_VOICE_ID", "147320").strip() or "147320"
 CAMB_SPEECH_MODEL = os.getenv("CAMB_SPEECH_MODEL", "mars-instruct").strip() or "mars-instruct"
-CAMB_SPEAKING_RATE = float(os.getenv("CAMB_SPEAKING_RATE", "0.94"))
+CAMB_SPEAKING_RATE = float(os.getenv("CAMB_SPEAKING_RATE", "1.04"))
 CAMB_USER_INSTRUCTIONS = os.getenv(
     "CAMB_USER_INSTRUCTIONS",
     (
         "Sound like a calm friend explaining a strange true-crime case. "
         "Keep the delivery continuous and human, with only tiny natural pauses. "
-        "Speak slightly slower than normal for clarity, but do not drag the pacing."
+        "Speak at a brisk but clear pace, and do not drag the pacing."
     ),
 ).strip()
 
 EDGE_TTS_VOICE = os.getenv("EDGE_TTS_VOICE", "en-US-GuyNeural")
-EDGE_TTS_RATE = os.getenv("EDGE_TTS_RATE", "-10%")
+EDGE_TTS_RATE = os.getenv("EDGE_TTS_RATE", "+8%")
 EDGE_TTS_VOLUME = os.getenv("EDGE_TTS_VOLUME", "+0%")
 EDGE_TTS_PITCH = os.getenv("EDGE_TTS_PITCH", "-2Hz")
 
@@ -84,7 +84,7 @@ FREETHEAI_TTS_INSTRUCTIONS = os.getenv(
     (
         "Speak like a calm friend explaining a strange true-crime case. "
         "Keep it continuous, natural, and easy to understand. "
-        "Use a slightly slower pace with tiny human pauses, never a news-reader tone."
+        "Use a brisk but clear pace with tiny human pauses, never a news-reader tone."
     ),
 ).strip()
 

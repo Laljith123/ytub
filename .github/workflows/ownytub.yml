@@ -121,14 +121,14 @@ jobs:
           FREETHEAI_TTS_RESPONSE_FORMAT: "wav"
           FREETHEAI_TTS_TIMEOUT: "180"
           FREETHEAI_TTS_MAX_ATTEMPTS: "4"
-          FREETHEAI_TTS_INSTRUCTIONS: "Speak like a calm friend explaining a strange true-crime case. Keep it continuous, natural, and easy to understand. Use a slightly slower pace with tiny human pauses, never a news-reader tone."
+          FREETHEAI_TTS_INSTRUCTIONS: ${{ vars.FREETHEAI_TTS_INSTRUCTIONS || 'Speak like a calm friend explaining a strange true-crime case. Keep it continuous, natural, and easy to understand. Use a brisk but clear pace with tiny human pauses, never a news-reader tone.' }}
           CAMB_LANGUAGE: "en-us"
           CAMB_VOICE_ID: ${{ vars.CAMB_VOICE_ID }}
           CAMB_SPEECH_MODEL: ${{ vars.CAMB_SPEECH_MODEL }}
-          CAMB_SPEAKING_RATE: "0.94"
-          CAMB_USER_INSTRUCTIONS: "Sound like a calm friend explaining a strange true-crime case. Keep the delivery continuous and human, with only tiny natural pauses. Speak slightly slower than normal for clarity, but do not drag the pacing."
+          CAMB_SPEAKING_RATE: ${{ vars.CAMB_SPEAKING_RATE || '1.04' }}
+          CAMB_USER_INSTRUCTIONS: ${{ vars.CAMB_USER_INSTRUCTIONS || 'Sound like a calm friend explaining a strange true-crime case. Keep the delivery continuous and human, with only tiny natural pauses. Speak at a brisk but clear pace, and do not drag the pacing.' }}
           EDGE_TTS_VOICE: "en-US-GuyNeural"
-          EDGE_TTS_RATE: "-10%"
+          EDGE_TTS_RATE: ${{ vars.EDGE_TTS_RATE || '+8%' }}
           EDGE_TTS_VOLUME: "+0%"
           EDGE_TTS_PITCH: "-2Hz"
           RIVA_VOICE: "English-US-RadTTS.Female-1"
@@ -158,12 +158,12 @@ jobs:
           SUBTITLE_RES_X: "1080"
           SUBTITLE_RES_Y: "1920"
           SUBTITLE_POS_Y: "960"
-          VOICE_SPEED: "1.0"
+          VOICE_SPEED: ${{ vars.VOICE_SPEED || '1.08' }}
           VOICE_GAIN_DB: "0"
           VOICE_CROSSFADE_MS: "45"
-          VOICE_DEFAULT_PAUSE_MS: "95"
-          VOICE_PAUSE_VARIATION_MS: "55"
-          VOICE_FINAL_PAUSE_MS: "260"
+          VOICE_DEFAULT_PAUSE_MS: ${{ vars.VOICE_DEFAULT_PAUSE_MS || '75' }}
+          VOICE_PAUSE_VARIATION_MS: ${{ vars.VOICE_PAUSE_VARIATION_MS || '35' }}
+          VOICE_FINAL_PAUSE_MS: ${{ vars.VOICE_FINAL_PAUSE_MS || '190' }}
           THUMBNAIL_SOURCE: "image"
           NVIDIA_IMAGE_RETRIES: "10"
           NVIDIA_IMAGE_RETRY_BACKOFF: "3"

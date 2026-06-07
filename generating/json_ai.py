@@ -1,3 +1,4 @@
+import json
 import os
 import time
 from typing import Any
@@ -6,16 +7,18 @@ import requests
 from openai import OpenAI
 
 try:
-    from rate_limit import retry_after_seconds, wait_for_provider_slot
+    from rate_limit import retry_after_seconds, wait_for_provider_interval, wait_for_provider_slot
 except ImportError:  # pragma: no cover - used when imported as generating.json_ai
-    from generating.rate_limit import retry_after_seconds, wait_for_provider_slot
+    from generating.rate_limit import retry_after_seconds, wait_for_provider_interval, wait_for_provider_slot
 
 
+APIFREELLM_BASE_URL = "https://apifreellm.com/api/v1"
 FREETHEAI_BASE_URL = "https://api.freetheai.xyz/v1"
 BLUESMINDS_BASE_URL = "https://api.bluesminds.com/v1"
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 CHATGPT_FREE_BASE_URL = "https://chatgpt-api.shn.hk/v1"
 NO_AUTH_API_KEY = "no-auth-required"
+APIFREELLM_DEFAULT_MODEL = "apifreellm"
 FREETHEAI_DEFAULT_MODEL = "opc/deepseek-v4-flash-free"
 NVIDIA_DEFAULT_MODEL = "openai/gpt-oss-120b"
 BLUESMINDS_DEFAULT_MODEL = "gpt-4o"
@@ -41,9 +44,17 @@ def has_freetheai_key() -> bool:
     return bool(env_value("FREETHEAI_API_KEY"))
 
 
+def has_apifreellm_key() -> bool:
+    return bool(env_value("APIFREELLM_API_KEY"))
+
+
 def provider_allows_no_auth(base_url: str) -> bool:
     normalized = str(base_url or "").lower()
     return "chatgpt-api.shn.hk" in normalized
+
+
+def is_apifreellm_base_url(base_url: str) -> bool:
+    return "apifreellm.com" in str(base_url or "").lower()
 
 
 def is_freetheai_base_url(base_url: str) -> bool:
@@ -53,6 +64,10 @@ def is_freetheai_base_url(base_url: str) -> bool:
 def json_api_key(specific_env: str = "", base_url: str = "") -> str:
     if provider_allows_no_auth(base_url):
         return NO_AUTH_API_KEY
+
+    if is_apifreellm_base_url(base_url):
+        names = [name for name in (specific_env, "APIFREELLM_API_KEY", "JSON_API_KEY") if name]
+        return env_value(*names)
 
     if is_freetheai_base_url(base_url):
         names = [name for name in (specific_env, "FREETHEAI_API_KEY", "JSON_API_KEY") if name]
@@ -70,6 +85,9 @@ def json_base_url(specific_env: str = "") -> str:
     shared = env_value("JSON_BASE_URL", "BLUESMINDS_BASE_URL")
     if shared:
         return shared
+
+    if has_apifreellm_key():
+        return APIFREELLM_BASE_URL
 
     if has_freetheai_key():
         return FREETHEAI_BASE_URL
@@ -89,6 +107,9 @@ def json_model(specific_env: str = "", fallback: str = NVIDIA_DEFAULT_MODEL) -> 
     if shared:
         return shared
 
+    if has_apifreellm_key():
+        return APIFREELLM_DEFAULT_MODEL
+
     if has_freetheai_key():
         return FREETHEAI_DEFAULT_MODEL
 
@@ -104,6 +125,8 @@ def is_bluesminds_base_url(base_url: str) -> bool:
 
 def json_provider_name(base_url: str) -> str:
     normalized = str(base_url or "").lower()
+    if is_apifreellm_base_url(normalized):
+        return "APIFreeLLM"
     if is_freetheai_base_url(normalized):
         return "FreeTheAi"
     if is_bluesminds_base_url(normalized):
@@ -141,6 +164,9 @@ def _model_id(item: Any) -> str:
 
 def _load_available_models(base_url: str, api_key: str) -> set[str]:
     if not base_url or not api_key:
+        return set()
+    if is_apifreellm_base_url(base_url):
+        _MODEL_CACHE[(base_url.rstrip("/"), api_key[:10])] = set()
         return set()
     cache_key = (base_url.rstrip("/"), api_key[:10])
     if cache_key in _MODEL_CACHE:
@@ -224,6 +250,71 @@ def _chat_completions_endpoint(base_url: str) -> str:
     return f"{str(base_url).rstrip('/')}/chat/completions"
 
 
+def _apifreellm_chat_endpoint(base_url: str) -> str:
+    base = str(base_url or APIFREELLM_BASE_URL).rstrip("/")
+    if base.endswith("/chat"):
+        return base
+    return f"{base}/chat"
+
+
+def _content_to_text(content: Any) -> str:
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get("text") or item.get("content")
+                if isinstance(text, str):
+                    parts.append(text)
+                continue
+            parts.append(str(item))
+        return "\n".join(part for part in parts if part).strip()
+    if isinstance(content, dict):
+        text = content.get("text") or content.get("content")
+        if isinstance(text, str):
+            return text
+        return json.dumps(content, ensure_ascii=False)
+    return str(content)
+
+
+def _apifreellm_message_from_request(request: dict[str, Any]) -> str:
+    messages = request.get("messages")
+    if not isinstance(messages, list):
+        return _content_to_text(request.get("prompt") or request.get("message") or messages)
+
+    blocks: list[str] = []
+    for message in messages:
+        if isinstance(message, dict):
+            role = str(message.get("role") or "user").strip().capitalize()
+            content = _content_to_text(message.get("content"))
+        else:
+            role = "Message"
+            content = _content_to_text(message)
+        if content:
+            blocks.append(f"{role}:\n{content}")
+    return "\n\n".join(blocks).strip()
+
+
+def _apifreellm_completion_from_payload(payload: Any) -> dict[str, Any]:
+    if isinstance(payload, dict):
+        if payload.get("success") is False:
+            detail = payload.get("error") or payload.get("message") or payload
+            raise RuntimeError(f"APIFreeLLM request failed: {detail}")
+
+        content = payload.get("response")
+        if content is None:
+            content = payload.get("message") or payload.get("content") or payload.get("text")
+        if isinstance(content, dict):
+            content = content.get("content") or content.get("text") or json.dumps(content, ensure_ascii=False)
+    else:
+        content = str(payload or "")
+
+    return {"choices": [{"message": {"role": "assistant", "content": str(content or "")}}]}
+
+
 def json_create_chat_completion(base_url: str, api_key: str, request: dict[str, Any]) -> Any:
     if provider_allows_no_auth(base_url):
         body = {key: value for key, value in request.items() if value is not None}
@@ -243,6 +334,55 @@ def json_create_chat_completion(base_url: str, api_key: str, request: dict[str, 
         if response.status_code >= 400:
             raise RuntimeError(f"HTTP {response.status_code}: {response.text[:500]}")
         return response.json()
+
+    if is_apifreellm_base_url(base_url):
+        if not api_key:
+            raise RuntimeError("APIFREELLM_API_KEY is missing.")
+
+        message = _apifreellm_message_from_request(request)
+        if not message:
+            raise RuntimeError("APIFreeLLM request is missing message content.")
+
+        body: dict[str, Any] = {"message": message}
+        model = str(request.get("model") or "").strip()
+        if model:
+            body["model"] = model
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        attempts = max(1, int(float(os.getenv("APIFREELLM_MAX_ATTEMPTS", "4"))))
+        timeout = float(os.getenv("JSON_COMPLETION_TIMEOUT", os.getenv("APIFREELLM_TIMEOUT", "180")))
+        for attempt in range(1, attempts + 1):
+            wait_for_provider_interval(
+                "APIFreeLLM",
+                interval_env="APIFREELLM_REQUEST_INTERVAL_SECONDS",
+                default_seconds=20.0,
+            )
+            response = requests.post(
+                _apifreellm_chat_endpoint(base_url),
+                headers=headers,
+                json=body,
+                timeout=timeout,
+            )
+            if response.status_code != 429:
+                if response.status_code >= 400:
+                    raise RuntimeError(f"HTTP {response.status_code}: {response.text[:500]}")
+                try:
+                    payload = response.json()
+                except ValueError:
+                    payload = response.text
+                return _apifreellm_completion_from_payload(payload)
+
+            sleep_for = retry_after_seconds(
+                response.headers.get("Retry-After"),
+                default=float(os.getenv("APIFREELLM_RETRY_WAIT_SECONDS", "20")),
+            )
+            print(f"APIFreeLLM rate limit hit during JSON call; waiting {sleep_for:.1f}s ({attempt}/{attempts}).")
+            time.sleep(sleep_for)
+
+        raise RuntimeError(f"APIFreeLLM JSON request failed after {attempts} rate-limit retries.")
 
     if is_freetheai_base_url(base_url):
         body = {key: value for key, value in request.items() if value is not None}
@@ -303,6 +443,8 @@ def json_completion_text(completion: Any, *, stream: bool = False) -> str:
     if isinstance(completion, str):
         return completion.strip()
     if isinstance(completion, dict):
+        if isinstance(completion.get("response"), str):
+            return completion["response"].strip()
         if isinstance(completion.get("content"), str):
             return completion["content"].strip()
         choices = completion.get("choices")

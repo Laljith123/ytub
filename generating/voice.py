@@ -105,7 +105,7 @@ def _clean_api_key(value: str | None) -> str:
 
 
 NVIDIA_API_KEY = _clean_api_key(os.getenv("NVIDIA_API_KEY"))
-FREETHEAI_API_KEY = _clean_api_key(os.getenv("FREETHEAI_API_KEY") or os.getenv("JSON_API_KEY"))
+FREETHEAI_API_KEY = _clean_api_key(os.getenv("FREETHEAI_API_KEY") or os.getenv("TTS_API_KEY"))
 
 VOICE_PLAN_ENABLED = os.getenv("VOICE_PLAN_ENABLED", "1") == "1"
 VOICE_PLAN_BASE_URL = json_base_url("VOICE_PLAN_BASE_URL")

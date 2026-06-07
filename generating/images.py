@@ -193,7 +193,7 @@ def _save_image_payload(body: Any, out_path: Path, timeout: int) -> None:
 
 
 def _free_image_api_key() -> str:
-    return _clean_api_key(os.getenv("FREETHEAI_API_KEY") or os.getenv("IMAGE_API_KEY") or os.getenv("JSON_API_KEY"))
+    return _clean_api_key(os.getenv("FREETHEAI_API_KEY") or os.getenv("IMAGE_API_KEY"))
 
 
 def _save_freetheai_image(prompt: str, out_path: Path) -> None:

@@ -4,6 +4,7 @@ from collections import deque
 
 
 _REQUEST_TIMES: dict[str, deque[float]] = {}
+_LAST_REQUEST_TIME: dict[str, float] = {}
 
 
 def _env_float(name: str, default: str) -> float:
@@ -35,6 +36,22 @@ def wait_for_provider_slot(provider: str, *, rpm_env: str, default_rpm: int = 10
             bucket.popleft()
 
     bucket.append(time.monotonic())
+
+
+def wait_for_provider_interval(provider: str, *, interval_env: str, default_seconds: float) -> None:
+    interval = max(0.0, _env_float(interval_env, str(default_seconds)))
+    if interval <= 0:
+        return
+
+    now = time.monotonic()
+    last = _LAST_REQUEST_TIME.get(provider)
+    if last is not None:
+        sleep_for = interval - (now - last)
+        if sleep_for > 0:
+            print(f"{provider} pacing: waiting {sleep_for:.1f}s before continuing.")
+            time.sleep(sleep_for)
+
+    _LAST_REQUEST_TIME[provider] = time.monotonic()
 
 
 def retry_after_seconds(value: str | None, default: float = 72.0) -> float:

@@ -1583,7 +1583,9 @@ def _run_completion(
 def contents(trends):
     load_dotenv()
     if (not CONTENT_API_ENABLED or not CONTENT_API_KEY) and not LOCAL_FALLBACK_ENABLED:
-        raise RuntimeError("No JSON prompt API key found. Set JSON_API_KEY, BLUESMINDS_API_KEY, or NVIDIA_API_KEY.")
+        raise RuntimeError(
+            "No JSON prompt API key found. Set APIFREELLM_API_KEY, JSON_API_KEY, BLUESMINDS_API_KEY, or NVIDIA_API_KEY."
+        )
     can_use_api = CONTENT_API_ENABLED and bool(CONTENT_API_KEY)
     if CONTENT_API_ENABLED and CONTENT_API_KEY:
         print(f"Content JSON prompts using {json_provider_name(CONTENT_BASE_URL)} model {CONTENT_MODEL}.")

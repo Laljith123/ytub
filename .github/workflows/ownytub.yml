@@ -51,16 +51,20 @@ jobs:
       - name: Check Generation Secrets
         shell: pwsh
         env:
+          APIFREELLM_API_KEY: ${{ secrets.APIFREELLM_API_KEY }}
           FREETHEAI_API_KEY: ${{ secrets.FREETHEAI_API_KEY }}
           CAMB_API_KEY: ${{ secrets.CAMB_API_KEY }}
         run: |
+          if (-not $env:APIFREELLM_API_KEY) {
+            throw "Missing GitHub secret APIFREELLM_API_KEY. Add your APIFreeLLM key as a repository secret."
+          }
           if (-not $env:FREETHEAI_API_KEY) {
-            throw "Missing GitHub secret FREETHEAI_API_KEY. Add your FreeTheAi key as a repository secret."
+            echo "::warning::Missing GitHub secret FREETHEAI_API_KEY. FreeTheAi image/TTS will be skipped unless another fallback provider is configured."
           }
           if (-not $env:CAMB_API_KEY) {
-            echo "::warning::Missing GitHub secret CAMB_API_KEY. FreeTheAi voice will be primary, then Edge TTS if CAMB is unavailable."
+            echo "::warning::Missing GitHub secret CAMB_API_KEY. Voice will use FreeTheAi if configured, then Edge TTS."
           } else {
-            echo "FREETHEAI_API_KEY and CAMB_API_KEY are configured. Voice order is FreeTheAi, CAMB, then Edge TTS."
+            echo "APIFREELLM_API_KEY and CAMB_API_KEY are configured. Text uses APIFreeLLM; voice order is FreeTheAi, CAMB, then Edge TTS."
           }
 
       # 🎲 Always run, but randomize how many to generate (>=1)
@@ -91,16 +95,21 @@ jobs:
       - name: Run Pipeline + Upload
         if: env.RUN_PIPELINE == '1'
         env:
+          APIFREELLM_API_KEY: ${{ secrets.APIFREELLM_API_KEY }}
           FREETHEAI_API_KEY: ${{ secrets.FREETHEAI_API_KEY }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           CAMB_API_KEY: ${{ secrets.CAMB_API_KEY }}
           BLUESMINDS_API_KEY: ${{ secrets.BLUESMINDS_API_KEY }}
-          JSON_API_KEY: ${{ secrets.FREETHEAI_API_KEY }}
-          JSON_BASE_URL: ${{ vars.JSON_BASE_URL || 'https://api.freetheai.xyz/v1' }}
-          JSON_MODEL: ${{ vars.JSON_MODEL || 'opc/deepseek-v4-flash-free' }}
-          JSON_MODEL_DISCOVERY_ENABLED: "1"
+          JSON_API_KEY: ${{ secrets.APIFREELLM_API_KEY }}
+          JSON_BASE_URL: ${{ vars.JSON_BASE_URL || 'https://apifreellm.com/api/v1' }}
+          JSON_MODEL: ${{ vars.JSON_MODEL || 'apifreellm' }}
+          JSON_MODEL_DISCOVERY_ENABLED: "0"
           JSON_MODEL_CANDIDATES: "gpt-4o,gpt-5-chat,grok-4.20-0309-non-reasoning,openai/gpt-4o-mini,gpt-4o-mini"
           JSON_EXTRA_BODY_ENABLED: ${{ vars.JSON_EXTRA_BODY_ENABLED }}
+          JSON_COMPLETION_TIMEOUT: "180"
+          APIFREELLM_REQUEST_INTERVAL_SECONDS: "20"
+          APIFREELLM_MAX_ATTEMPTS: "4"
+          APIFREELLM_RETRY_WAIT_SECONDS: "20"
           FREETHEAI_RPM_LIMIT: "10"
           RATE_LIMIT_CUSHION_SECONDS: "12"
           FREETHEAI_MAX_ATTEMPTS: "4"
@@ -167,7 +176,7 @@ jobs:
           FREETHEAI_IMAGE_RETRIES: "3"
           FREETHEAI_IMAGE_PROMPT_PREFIX: "Create a cinematic, safe, non-graphic vertical YouTube Shorts image. No readable text, no logos, no gore."
           CONTENT_ENABLE_THINKING: "1"
-          CONTENT_STREAM: "1"
+          CONTENT_STREAM: "0"
           TRENDS_USE_PYTRENDS: "0"
           BACKGROUND_MUSIC_ENABLED: "1"
           BACKGROUND_MUSIC_GAIN: "1.6"
@@ -177,9 +186,9 @@ jobs:
           OPENVERSE_MUSIC_MAX_SECONDS: "600"
           OPENVERSE_MUSIC_PAGE_SIZE: "20"
           OPENVERSE_MUSIC_PAGES: "3"
-          # FreeTheAi JSON prompt config.
-          CONTENT_BASE_URL: ${{ vars.CONTENT_BASE_URL || 'https://api.freetheai.xyz/v1' }}
-          CONTENT_MODEL: ${{ vars.CONTENT_MODEL || 'opc/deepseek-v4-flash-free' }}
+          # APIFreeLLM JSON prompt config.
+          CONTENT_BASE_URL: ${{ vars.CONTENT_BASE_URL || 'https://apifreellm.com/api/v1' }}
+          CONTENT_MODEL: ${{ vars.CONTENT_MODEL || 'apifreellm' }}
           NVIDIA_BASE_URL: "https://integrate.api.nvidia.com/v1"
 
           # Content.py new fields / retention config
@@ -200,8 +209,8 @@ jobs:
 
           # Voice.py Riva voice-plan config
           VOICE_PLAN_ENABLED: "0"
-          VOICE_PLAN_MODEL: ${{ vars.VOICE_PLAN_MODEL || 'opc/deepseek-v4-flash-free' }}
-          VOICE_PLAN_BASE_URL: ${{ vars.VOICE_PLAN_BASE_URL || 'https://api.freetheai.xyz/v1' }}
+          VOICE_PLAN_MODEL: ${{ vars.VOICE_PLAN_MODEL || 'apifreellm' }}
+          VOICE_PLAN_BASE_URL: ${{ vars.VOICE_PLAN_BASE_URL || 'https://apifreellm.com/api/v1' }}
           VOICE_PLAN_MAX_ATTEMPTS: "3"
           VOICE_PLAN_MAX_TOKENS: "4096"
           VOICE_PLAN_TEMPERATURE: "0.35"
@@ -224,8 +233,8 @@ jobs:
 
           # Thumbnail.py AI planner config
           THUMBNAIL_PLAN_ENABLED: "1"
-          THUMBNAIL_PLAN_MODEL: ${{ vars.THUMBNAIL_PLAN_MODEL || 'opc/deepseek-v4-flash-free' }}
-          THUMBNAIL_PLAN_BASE_URL: ${{ vars.THUMBNAIL_PLAN_BASE_URL || 'https://api.freetheai.xyz/v1' }}
+          THUMBNAIL_PLAN_MODEL: ${{ vars.THUMBNAIL_PLAN_MODEL || 'apifreellm' }}
+          THUMBNAIL_PLAN_BASE_URL: ${{ vars.THUMBNAIL_PLAN_BASE_URL || 'https://apifreellm.com/api/v1' }}
           THUMBNAIL_PLAN_MAX_ATTEMPTS: "3"
           THUMBNAIL_PLAN_MAX_TOKENS: "2048"
           THUMBNAIL_PLAN_REASONING_BUDGET: "2048"
@@ -247,8 +256,8 @@ jobs:
           TRENDS_KEYWORD_MODE: "random"
           TRENDS_NEWS_LIMIT_PER_KEYWORD: "8"
           TRENDS_YT_SUGGEST_LIMIT_PER_KEYWORD: "10"
-          TRENDS_AI_MODEL: ${{ vars.TRENDS_AI_MODEL || 'opc/deepseek-v4-flash-free' }}
-          TRENDS_AI_BASE_URL: ${{ vars.TRENDS_AI_BASE_URL || 'https://api.freetheai.xyz/v1' }}
+          TRENDS_AI_MODEL: ${{ vars.TRENDS_AI_MODEL || 'apifreellm' }}
+          TRENDS_AI_BASE_URL: ${{ vars.TRENDS_AI_BASE_URL || 'https://apifreellm.com/api/v1' }}
           TRENDS_AI_MAX_ATTEMPTS: "3"
           TRENDS_AI_MAX_TOKENS: "1024"
           TRENDS_AI_TEMPERATURE: "0.25"
@@ -263,8 +272,8 @@ jobs:
           OUTPUT_JSON_PATH: ${{ github.workspace }}\output.json
           #youtube
           YOUTUBE_METADATA_AI_ENABLED: "1"
-          YOUTUBE_METADATA_MODEL: ${{ vars.YOUTUBE_METADATA_MODEL || 'opc/deepseek-v4-flash-free' }}
-          YOUTUBE_METADATA_BASE_URL: ${{ vars.YOUTUBE_METADATA_BASE_URL || 'https://api.freetheai.xyz/v1' }}
+          YOUTUBE_METADATA_MODEL: ${{ vars.YOUTUBE_METADATA_MODEL || 'apifreellm' }}
+          YOUTUBE_METADATA_BASE_URL: ${{ vars.YOUTUBE_METADATA_BASE_URL || 'https://apifreellm.com/api/v1' }}
           YOUTUBE_METADATA_MAX_ATTEMPTS: "3"
           YOUTUBE_METADATA_MAX_TOKENS: "2048"
           YOUTUBE_METADATA_TEMPERATURE: "0.35"

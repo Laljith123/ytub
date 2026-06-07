@@ -41,21 +41,25 @@ if MAX_TOTAL_SECONDS < MIN_TOTAL_SECONDS:
 MIN_SCENES = max(1, int(math.ceil(MIN_TOTAL_SECONDS / SCENE_SECONDS)))
 MAX_SCENES = max(MIN_SCENES, int(math.ceil(MAX_TOTAL_SECONDS / SCENE_SECONDS)))
 
-MAX_TOKENS = int(os.getenv("CONTENT_MAX_TOKENS", "3072"))
-REASONING_BUDGET = int(os.getenv("CONTENT_REASONING_BUDGET", "0"))
-TEMPERATURE = float(os.getenv("CONTENT_TEMPERATURE", "0.7"))
-TOP_P = float(os.getenv("CONTENT_TOP_P", "0.9"))
+MAX_TOKENS = int(os.getenv("CONTENT_MAX_TOKENS", "16384"))
+REASONING_BUDGET = int(os.getenv("CONTENT_REASONING_BUDGET", "16384"))
+TEMPERATURE = float(os.getenv("CONTENT_TEMPERATURE", "1"))
+TOP_P = float(os.getenv("CONTENT_TOP_P", "0.95"))
 ENABLE_THINKING = os.getenv("CONTENT_ENABLE_THINKING", "1") == "1"
-STREAM_OUTPUT = os.getenv("CONTENT_STREAM", "0") == "1"
+STREAM_OUTPUT = os.getenv("CONTENT_STREAM", "1") == "1"
 SIMILARITY_THRESHOLD = float(os.getenv("CONTENT_DUP_SIM", "0.82"))
 MAX_OUTPUT_CHARS = int(os.getenv("CONTENT_MAX_OUTPUT_CHARS", "8000"))
 MAX_NGRAM_REPEAT = int(os.getenv("CONTENT_MAX_NGRAM_REPEAT", "20"))
 CONTENT_API_ENABLED = os.getenv("CONTENT_API_ENABLED", "1") == "1"
 CONTENT_BASE_URL = json_base_url("CONTENT_BASE_URL")
 CONTENT_API_KEY = json_api_key("CONTENT_API_KEY", base_url=CONTENT_BASE_URL)
+CONTENT_TOPIC_PROFILE = os.getenv(
+    "CONTENT_TOPIC_PROFILE",
+    "a fully dynamic YouTube Shorts channel that turns real, source-backed trends into natural friend-style explainers",
+).strip()
 FALLBACK_MAX_TOKENS = int(os.getenv("CONTENT_FALLBACK_MAX_TOKENS", "4096"))
 USED_PROMPT_LIMIT = max(0, int(os.getenv("CONTENT_USED_PROMPT_LIMIT", "60")))
-LOCAL_FALLBACK_ENABLED = os.getenv("CONTENT_LOCAL_FALLBACK_ENABLED", "1") == "1"
+LOCAL_FALLBACK_ENABLED = os.getenv("CONTENT_LOCAL_FALLBACK_ENABLED", "0") == "1"
 LOCAL_FALLBACK_REJECT_TERMS = tuple(
     term.strip().lower()
     for term in re.split(
@@ -107,11 +111,11 @@ PROMPT_CAMERA_CUES = os.getenv(
 )
 PROMPT_STORY_STRUCTURE = os.getenv(
     "CONTENT_STORY_STRUCTURE",
-    "Choose a fresh structure for the case: conversational hook, verified facts, suspicious clue, chilling turn, original viewer theory question",
+    "Choose a fresh structure for the selected topic: conversational hook, verified facts, surprising detail, clear turn, original viewer question",
 )
 PROMPT_STYLE_NOTE = os.getenv(
     "CONTENT_STYLE_NOTE",
-    "natural friend explaining quietly, suspicious but respectful, goosebump tension, never news-reader, no repeated template phrases",
+    "natural friend explaining clearly, curious and skeptical but respectful, goosebump tension when the topic supports it, never news-reader, no repeated template phrases",
 )
 BANNED_SCRIPT_PHRASES = tuple(
     phrase.strip().lower()
@@ -1435,7 +1439,7 @@ def _build_prompt(trends: list[str], repeated: list[str], channel_titles: list[s
         "Source-backed trend context JSON: "
         f"{json.dumps(source_context, ensure_ascii=False)} "
         "Use this as grounding context for topic choice and angle. It is not enough by itself; "
-        "only include case facts that are public, documentable, and internally consistent. "
+        "only include topic facts that are public, documentable, and internally consistent. "
         if source_context
         else ""
     )
@@ -1451,8 +1455,8 @@ def _build_prompt(trends: list[str], repeated: list[str], channel_titles: list[s
         else ""
     )
     history_rule = (
-        "If a case overlaps with any existing channel title, reject it and choose a different case. "
-        "Never cover the same case again with a new headline. "
+        "If a topic overlaps with any existing channel title, reject it and choose a different topic. "
+        "Never cover the same topic again with a new headline. "
         if prompt_channel_titles
         else ""
     )
@@ -1465,27 +1469,28 @@ def _build_prompt(trends: list[str], repeated: list[str], channel_titles: list[s
     else:
         pick_line = ""
     trend_rule = (
-        f"Select the strongest REAL true crime case from this list of trends: {trend_topics}. "
+        f"Select the strongest real, source-backed topic from this list of trends: {trend_topics}. "
         if not all_used
         else (
             f"All listed trend topics are already used in local history. "
-            f"Ignore the list {trend_topics} and pick ANY real true crime case NOT in upload history or output.json{history_suffix}. "
-            "Set \"trend\" to the exact case name you chose."
+            f"Ignore the list {trend_topics} and pick ANY real, source-backed topic NOT in upload history or output.json{history_suffix}. "
+            "Set \"trend\" to the exact topic text you chose."
         )
     )
     return (
-        "You are a true-crime storyteller who sounds like a smart friend explaining a strange case, "
-        "not a news reader, not a police report, and not a hype narrator. "
+        f"You create content for {CONTENT_TOPIC_PROFILE}. "
+        "Sound like a smart friend explaining something interesting, "
+        "not a news reader, not a press release, and not a hype narrator. "
         f"This is a vertical 9:16 YouTube Short, {int(MIN_TOTAL_SECONDS)}-{int(MAX_TOTAL_SECONDS)} seconds total. "
         f"{trend_rule}"
         f"{source_context_line}"
-        "You MUST select a real, well-documented true crime case. "
-        "Do NOT choose movies, TV shows, fictional stories, creepypasta, urban legends, or invented cases. "
-        "Use only public, documentable facts. Do NOT invent updates, evidence, quotes, dates, or police actions. "
+        "You MUST select a real, well-documented topic with enough public information for a short explainer. "
+        "Do NOT choose fictional stories, creepypasta, urban legends, vague categories, or invented topics. "
+        "Use only public, documentable facts. Do NOT invent updates, evidence, quotes, dates, numbers, or actions. "
         "Accuracy is more important than drama: if a detail is disputed or unknown, say it carefully instead of pretending it is proven. "
         "If a provided trend has a current public-interest angle, connect it naturally without forcing it. "
-        "Keep it suitable for YouTube: no gore, no graphic injury details, no cruelty, no victim-blaming, and no jokes about victims. "
-        "Focus on mystery, timeline, investigation, decisions, clues, consequences, and unanswered questions. "
+        "Keep it suitable for YouTube: no gore, no graphic injury details, no cruelty, no harassment, and no jokes about harmed people. "
+        "Focus on the strongest natural angle for the selected topic: timeline, stakes, decisions, evidence, consequences, tradeoffs, contradictions, or unanswered questions. "
         f"{ignore_line}"
         f"{history_line}"
         f"{history_rule}"
@@ -1518,11 +1523,11 @@ def _build_prompt(trends: list[str], repeated: list[str], channel_titles: list[s
         f"6. Total scenes: {MIN_SCENES}-{MAX_SCENES} scenes, about one scene every {int(SCENE_SECONDS)} seconds. "
         f"7. Each script item = 1-2 short spoken sentences, tight pacing around {int(SCENE_SECONDS)} seconds per clip. "
         "8. Every script item MUST add one new concrete fact, clue, decision, location, time shift, consequence, or turning point. "
-        "9. No filler, no recap, no repeated phrasing, no generic true-crime lines. "
+        "9. No filler, no recap, no repeated phrasing, no generic niche-template lines. "
         "10. Include only core facts: who, what, where, when, how, what was strange, and why it still matters if known. "
         "11. Make the narration human and suspicious, like a friend saying, 'listen to this part.' Use short questions, natural pauses, and sudden-stop beats. "
         "12. Do NOT use slang, memes, stage directions, or anchor phrases. Avoid words like lowkey, no cap, hold up, breaking news, and let's dive in. "
-        "13. Empathy first, curiosity second. Respect victims and families. "
+        "13. Be respectful when the topic involves real people, harm, money, health, politics, or private lives. "
         "14. The final script item MUST ask viewers for comments, theories, thoughts, or what they noticed, "
         "and it MUST end with a question. Make this line original every time; do NOT use a fixed template sentence. "
         "15. Images MUST be cinematic, photorealistic, documentary b-roll visuals matched to each narration scene. "
@@ -1536,10 +1541,10 @@ def _build_prompt(trends: list[str], repeated: list[str], channel_titles: list[s
         f"23. thumbnail_text MUST be {THUMBNAIL_TEXT_MAX_WORDS} words or fewer, high curiosity, no false claim. "
         f"24. hashtags MUST contain {HASHTAG_MIN_COUNT}-{HASHTAG_MAX_COUNT} short hashtags, each starting with # and containing no spaces. "
         f"25. retention_triggers MUST contain {RETENTION_TRIGGER_MIN_COUNT}-{RETENTION_TRIGGER_MAX_COUNT} short reasons this Short keeps attention. "
-        "26. trend MUST be the exact case/topic text you chose, with no numbering and no source labels. "
+        "26. trend MUST be the exact topic text you chose, with no numbering and no source labels. "
         f"27. background_music MUST be {BACKGROUND_MUSIC_MIN_WORDS}-{BACKGROUND_MUSIC_MAX_WORDS} plain ASCII words only, no punctuation, no emojis, no quotes, no special characters. "
-        "28. Do NOT repeat or paraphrase titles, lines, cases, or image prompts from earlier videos. "
-        f"29. If none of the provided trends are usable, pick ANY real true crime case that does NOT appear in upload history or output.json{history_suffix}. "
+        "28. Do NOT repeat or paraphrase titles, lines, topics, or image prompts from earlier videos. "
+        f"29. If none of the provided trends are usable, pick ANY real, source-backed topic that does NOT appear in upload history or output.json{history_suffix}. "
         "30. If you cannot comply with ALL rules, return an empty JSON object {} ONLY. "
         "31. If you start repeating or looping, STOP and return {} ONLY. "
         "32. Output MUST be valid JSON and nothing else."
@@ -1584,7 +1589,7 @@ def contents(trends):
     load_dotenv()
     if (not CONTENT_API_ENABLED or not CONTENT_API_KEY) and not LOCAL_FALLBACK_ENABLED:
         raise RuntimeError(
-            "No JSON prompt API key found. Set APIFREELLM_API_KEY, JSON_API_KEY, BLUESMINDS_API_KEY, or NVIDIA_API_KEY."
+            "No JSON prompt API key found. Set NVIDIA_API_KEY or JSON_API_KEY for NVIDIA Nemotron text generation."
         )
     can_use_api = CONTENT_API_ENABLED and bool(CONTENT_API_KEY)
     if CONTENT_API_ENABLED and CONTENT_API_KEY:
@@ -1623,7 +1628,7 @@ def contents(trends):
             if retry_reason:
                 attempt_prompt = (
                     f"{prompt} Previous attempt failed validation: {retry_reason} "
-                    "Generate a completely different case, title, and script."
+                    "Generate a completely different topic, title, and script."
                 )
             try:
                 s = _run_completion(
@@ -1635,7 +1640,7 @@ def contents(trends):
             except Exception as exc:
                 api_failure_reason = str(exc)
                 print(f"\ncontent request failed: {exc}\n")
-                if _api_failure_should_use_local_fallback(api_failure_reason):
+                if LOCAL_FALLBACK_ENABLED and _api_failure_should_use_local_fallback(api_failure_reason):
                     print("Content API is unavailable or rate-limited; switching to local fallback.")
                     break
                 s = ""

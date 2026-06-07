@@ -279,6 +279,39 @@ SEARCH_KEYWORDS = ['dark crime',
  'top mystery cases',
  'famous cold cases']
 
+DYNAMIC_SEARCH_KEYWORDS = [
+    "latest viral story",
+    "interesting news explained",
+    "surprising discovery",
+    "science breakthrough",
+    "technology trend",
+    "internet mystery",
+    "strange history",
+    "business scandal explained",
+    "AI trend explained",
+    "space discovery",
+    "health study explained",
+    "money mistake story",
+    "sports controversy",
+    "celebrity controversy explained",
+    "social media trend explained",
+    "weird world news",
+    "history fact explained",
+    "travel mystery",
+    "food trend explained",
+    "culture debate explained",
+    "new invention explained",
+    "environment story explained",
+    "archaeology discovery",
+    "psychology fact explained",
+    "law change explained",
+    "viral question answered",
+    "hidden detail explained",
+    "why is everyone talking about",
+    "what happened explained",
+    "things you did not know",
+]
+
 
 # -------------------------
 # Config helpers
@@ -311,14 +344,21 @@ def _split_config_values(raw: str) -> list[str]:
 
 def _load_keywords() -> list[str]:
     """
-    Loads trend seed keywords from the in-code SEARCH_KEYWORDS list.
+    Loads trend seed keywords from the dynamic defaults by default.
 
-    This keeps the old behavior: keywords come from the Python file itself,
-    not from a separate text file. TRENDS_KEYWORDS can still add extra generic
-    seed keywords from .env, but no external keyword file is used.
+    Set TRENDS_TOPIC_MODE=true_crime to use the legacy crime/mystery seed list.
+    Set TRENDS_KEYWORDS_REPLACE=1 to use only TRENDS_KEYWORDS.
     """
-    keywords: list[str] = list(SEARCH_KEYWORDS)
-    keywords.extend(_split_config_values(os.getenv("TRENDS_KEYWORDS", "")))
+    configured_keywords = _split_config_values(os.getenv("TRENDS_KEYWORDS", ""))
+    replace_keywords = _env_bool("TRENDS_KEYWORDS_REPLACE", "0")
+    topic_mode = os.getenv("TRENDS_TOPIC_MODE", "dynamic").strip().lower()
+
+    if replace_keywords and configured_keywords:
+        keywords = configured_keywords
+    elif topic_mode in {"true_crime", "true-crime", "crime", "mystery"}:
+        keywords = list(SEARCH_KEYWORDS) + configured_keywords
+    else:
+        keywords = list(DYNAMIC_SEARCH_KEYWORDS) + configured_keywords
 
     cleaned: list[str] = []
     seen: set[str] = set()
@@ -330,7 +370,7 @@ def _load_keywords() -> list[str]:
         seen.add(norm)
 
     if not cleaned:
-        raise RuntimeError("No trend keywords available in SEARCH_KEYWORDS or TRENDS_KEYWORDS.")
+        raise RuntimeError("No trend keywords available in dynamic defaults, legacy defaults, or TRENDS_KEYWORDS.")
 
     return cleaned
 
@@ -353,6 +393,12 @@ USE_PYTRENDS = _env_bool("TRENDS_USE_PYTRENDS", "1")
 USE_GOOGLE_NEWS = _env_bool("TRENDS_USE_GOOGLE_NEWS", "1")
 USE_YOUTUBE_SUGGEST = _env_bool("TRENDS_USE_YOUTUBE_SUGGEST", "1")
 USE_AI_JUDGE = _env_bool("TRENDS_USE_AI_JUDGE", "1")
+TOPIC_MODE = os.getenv("TRENDS_TOPIC_MODE", "dynamic").strip().lower()
+DYNAMIC_TOPIC_MODE = TOPIC_MODE not in {"true_crime", "true-crime", "crime", "mystery"}
+TREND_CHANNEL_PROFILE = os.getenv(
+    "TRENDS_CHANNEL_PROFILE",
+    "a fully dynamic YouTube Shorts channel that explains real, source-backed trends across categories",
+).strip()
 
 PYTRENDS_RETRIES = _env_int("TRENDS_PYTRENDS_RETRIES", "3")
 PYTRENDS_BACKOFF = _env_float("TRENDS_PYTRENDS_BACKOFF", "2")
@@ -375,11 +421,11 @@ AI_BASE_URL = json_base_url("TRENDS_AI_BASE_URL")
 AI_API_KEY = json_api_key("TRENDS_AI_API_KEY", base_url=AI_BASE_URL)
 AI_MODEL = resolve_json_model(json_model("TRENDS_AI_MODEL"), AI_BASE_URL, AI_API_KEY)
 AI_MAX_ATTEMPTS = _env_int("TRENDS_AI_MAX_ATTEMPTS", "3")
-AI_MAX_TOKENS = _env_int("TRENDS_AI_MAX_TOKENS", "1024")
-AI_TEMPERATURE = _env_float("TRENDS_AI_TEMPERATURE", "0.25")
-AI_TOP_P = _env_float("TRENDS_AI_TOP_P", "0.9")
+AI_MAX_TOKENS = _env_int("TRENDS_AI_MAX_TOKENS", "16384")
+AI_TEMPERATURE = _env_float("TRENDS_AI_TEMPERATURE", "1")
+AI_TOP_P = _env_float("TRENDS_AI_TOP_P", "0.95")
 AI_ENABLE_THINKING = _env_bool("TRENDS_AI_ENABLE_THINKING", "1")
-AI_REASONING_BUDGET = _env_int("TRENDS_AI_REASONING_BUDGET", "4096")
+AI_REASONING_BUDGET = _env_int("TRENDS_AI_REASONING_BUDGET", "16384")
 
 OUTPUT_JSON = Path(os.getenv("OUTPUT_JSON_PATH", str(PROJECT_ROOT / "output.json")))
 HISTORY_JSON = Path(os.getenv("HISTORY_JSON_PATH", str(PROJECT_ROOT / "generating" / "history.json")))
@@ -395,6 +441,17 @@ FALLBACK_REJECT_TERMS = tuple(
             "movie|movies|film|films|tv show|series|episode|episodes|hulu|netflix|"
             "trailer|review|reviews|recap|podcast|podcasting|psychologist|psychology|"
             "study|culture|christians|discourse|warning|poses the question",
+        ),
+    )
+    if term.strip()
+)
+DYNAMIC_FALLBACK_REJECT_TERMS = tuple(
+    term.strip().lower()
+    for term in re.split(
+        r"[|,]",
+        os.getenv(
+            "TRENDS_DYNAMIC_FALLBACK_REJECT_TERMS",
+            "trailer|recap|watch online|full movie|full episode|streaming now|box office|release date only",
         ),
     )
     if term.strip()
@@ -543,6 +600,16 @@ def _candidate_looks_unusable_for_fallback(text: object) -> bool:
     norm = _normalize(str(text or ""))
     if not norm or norm.isdigit():
         return True
+    if DYNAMIC_TOPIC_MODE:
+        if len(norm.split()) < 2:
+            return True
+        reject_hit = any(_normalize(term) in norm for term in DYNAMIC_FALLBACK_REJECT_TERMS if _normalize(term))
+        media_hit = any(
+            term in norm
+            for term in ("trailer", "recap", "episode recap", "watch online", "streaming now", "box office")
+        )
+        return reject_hit or media_hit
+
     if re.search(r"\b\d+\b.*\b(stories|cases|homicides|murders|killers)\b", norm):
         return True
     if norm.startswith(("why true crime", "does listening to true crime", "if you relax by watching")):
@@ -810,20 +877,21 @@ def _build_trend_judge_prompt(candidates: list[dict], used_topics: list[str]) ->
     compact_used = used_topics[:USED_PROMPT_LIMIT]
 
     return (
-        "You are a YouTube Shorts trend selector for a true-crime and mystery channel. "
+        f"You are a YouTube Shorts trend selector for {TREND_CHANNEL_PROFILE}. "
         "Pick the best topics that can become engaging, respectful, non-graphic Shorts. "
-        "Use ONLY the candidate list. Do not invent cases. Do not use hardcoded examples. "
-        "Reject movies, TV shows, fictional stories, urban legends, vague category keywords, "
-        "political arguments, celebrity gossip without a clear case, and overly graphic topics. "
-        "Prefer real searchable case names, clear mystery angles, missing-person/cold-case style curiosity, "
-        "recent relevance, strong hook potential, and safe YouTube wording. "
-        "Avoid every used topic/title in the previously_used list. Do not choose the same case with a new headline. "
-        "The output goes directly into content.py, so case_name must be a clean trend string only: "
+        "Use ONLY the candidate list. Do not invent topics. Do not use hardcoded examples. "
+        "Reject fictional stories, vague category keywords, pure product ads, low-context celebrity gossip, "
+        "and overly graphic or unsafe topics. "
+        "Prefer real searchable topics with recent relevance, clear public-interest angle, strong hook potential, "
+        "enough facts to explain, and safe YouTube wording. "
+        "Avoid every used topic/title in the previously_used list. Do not choose the same topic with a new headline. "
+        "The output goes directly into content.py, so case_name must be a clean topic string only: "
         "no numbering, no source name, no URL, no date, no extra description, and no parenthetical source. "
         f"Select exactly {SELECTED_TREND_COUNT} topics unless fewer usable topics exist. "
         "Return ONE valid JSON object ONLY with this schema: "
         "{\"selected\":[{\"case_name\":\"...\",\"angle\":\"...\",\"source_title\":\"...\","
         "\"source\":\"...\",\"shorts_score\":0,\"safety\":\"safe\"}]}. "
+        "case_name is kept for compatibility but must contain the selected topic, not a fixed niche. "
         "case_name must be concise, searchable, content.py-compatible, and without numbering/source names. "
         "source_title must exactly match the candidate title you used. "
         "shorts_score must be 0-100. "
@@ -921,15 +989,15 @@ def _validate_selected(items: list[dict], candidates: list[dict], used_topics: l
 def _fallback_selected(candidates: list[dict], used_topics: list[str]) -> list[dict]:
     selected: list[dict] = []
     seen: set[str] = set()
-    case_like_candidates = [
+    usable_candidates = [
         item
         for item in candidates
         if not _candidate_looks_unusable_for_fallback(_content_trend_text(str(item.get("title") or "")))
     ]
-    if case_like_candidates:
-        candidates = case_like_candidates
+    if usable_candidates:
+        candidates = usable_candidates
     else:
-        print("Fallback selection found no clearly case-like candidates; using raw candidates as a last resort.")
+        print("Fallback selection found no clearly usable candidates; using raw candidates as a last resort.")
 
     for item in candidates:
         title = _content_trend_text(str(item.get("title") or ""))

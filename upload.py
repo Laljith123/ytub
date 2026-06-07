@@ -51,12 +51,12 @@ PRIVACY_STATUS = os.getenv("YOUTUBE_PRIVACY_STATUS", "public")
 CATEGORY_ID = os.getenv("YOUTUBE_CATEGORY_ID", "24")
 DEFAULT_TAGS = os.getenv(
     "YOUTUBE_TAGS",
-    "shorts,ytshorts,youtubeshorts,shortsvideo,viral,trending,true crime,crime,documentary,mystery,unsolved,cold case,investigation,case file,missing person",
+    "shorts,ytshorts,youtubeshorts,shortsvideo,viral,trending,explained,story,interesting,documentary,learnsomething,newfacts,curiosity",
 ).split(",")
 POPULAR_HASHTAGS = os.getenv(
     "YOUTUBE_HASHTAGS",
     "#shorts #ytshorts #youtubeshorts #shortsvideo #viral #trending "
-    "#truecrime #mystery #crime #unsolved #coldcase #documentary",
+    "#explained #interesting #facts #curiosity #documentary",
 ).strip()
 DESCRIPTION_SUFFIX = os.getenv("YOUTUBE_DESCRIPTION_SUFFIX", POPULAR_HASHTAGS)
 KEYWORDS_LINE = os.getenv("YOUTUBE_KEYWORDS_LINE", "").strip()
@@ -85,11 +85,11 @@ METADATA_BASE_URL = json_base_url("YOUTUBE_METADATA_BASE_URL")
 METADATA_API_KEY = json_api_key("YOUTUBE_METADATA_API_KEY", base_url=METADATA_BASE_URL)
 METADATA_MODEL = resolve_json_model(json_model("YOUTUBE_METADATA_MODEL"), METADATA_BASE_URL, METADATA_API_KEY)
 METADATA_MAX_ATTEMPTS = int(os.getenv("YOUTUBE_METADATA_MAX_ATTEMPTS", "3"))
-METADATA_MAX_TOKENS = int(os.getenv("YOUTUBE_METADATA_MAX_TOKENS", "4096"))
-METADATA_TEMPERATURE = float(os.getenv("YOUTUBE_METADATA_TEMPERATURE", "0.35"))
-METADATA_TOP_P = float(os.getenv("YOUTUBE_METADATA_TOP_P", "0.9"))
+METADATA_MAX_TOKENS = int(os.getenv("YOUTUBE_METADATA_MAX_TOKENS", "16384"))
+METADATA_TEMPERATURE = float(os.getenv("YOUTUBE_METADATA_TEMPERATURE", "1"))
+METADATA_TOP_P = float(os.getenv("YOUTUBE_METADATA_TOP_P", "0.95"))
 METADATA_ENABLE_THINKING = os.getenv("YOUTUBE_METADATA_ENABLE_THINKING", "1") == "1"
-METADATA_REASONING_BUDGET = int(os.getenv("YOUTUBE_METADATA_REASONING_BUDGET", "4096"))
+METADATA_REASONING_BUDGET = int(os.getenv("YOUTUBE_METADATA_REASONING_BUDGET", "16384"))
 METADATA_TITLE_MAX_CHARS = int(os.getenv("YOUTUBE_METADATA_TITLE_MAX_CHARS", "75"))
 METADATA_DESCRIPTION_MAX_CHARS = int(os.getenv("YOUTUBE_METADATA_DESCRIPTION_MAX_CHARS", "1200"))
 METADATA_TAG_MIN_COUNT = int(os.getenv("YOUTUBE_METADATA_TAG_MIN_COUNT", "8"))
@@ -450,9 +450,9 @@ def _build_metadata_prompt(latest: dict, fallback_title: str, fallback_descripti
     }
 
     return (
-        "You are a YouTube Shorts SEO metadata editor for a safe true-crime mystery channel. "
+        "You are a YouTube Shorts SEO metadata editor for a dynamic topic-driven channel. "
         "Create upload metadata using ONLY the provided video facts. Do not invent names, dates, "
-        "locations, victims, suspects, or case details. Package the content for curiosity and retention. "
+        "locations, numbers, people, claims, or topic details. Package the content for curiosity and retention. "
         "Avoid graphic wording, gore, insults, clickbait lies, and disrespectful slang. "
         "Prefer short curiosity titles over boring documentary titles. "
         "Return ONE valid JSON object ONLY with exactly these fields: "
@@ -540,11 +540,11 @@ def generate_hashtags(title: str, description: str, max_retries: int = 3) -> tup
         METADATA_BASE_URL,
         METADATA_API_KEY,
     )
-    max_tokens = int(os.getenv("YOUTUBE_HASHTAG_MAX_TOKENS", "1024"))
-    temperature = float(os.getenv("YOUTUBE_HASHTAG_TEMPERATURE", "0.35"))
-    top_p = float(os.getenv("YOUTUBE_HASHTAG_TOP_P", "0.9"))
+    max_tokens = int(os.getenv("YOUTUBE_HASHTAG_MAX_TOKENS", "16384"))
+    temperature = float(os.getenv("YOUTUBE_HASHTAG_TEMPERATURE", "1"))
+    top_p = float(os.getenv("YOUTUBE_HASHTAG_TOP_P", "0.95"))
     enable_thinking = os.getenv("YOUTUBE_HASHTAG_ENABLE_THINKING", "1") == "1"
-    reasoning_budget = int(os.getenv("YOUTUBE_HASHTAG_REASONING_BUDGET", "1024"))
+    reasoning_budget = int(os.getenv("YOUTUBE_HASHTAG_REASONING_BUDGET", "16384"))
 
     prompt = (
         "You are a YouTube Shorts SEO expert. Generate content-matched hashtags only.\n\n"
@@ -556,7 +556,7 @@ def generate_hashtags(title: str, description: str, max_retries: int = 3) -> tup
         "- Every hashtag MUST start with #\n"
         "- No explanations, no markdown, no extra fields\n"
         "- No spaces inside hashtags; use camelCase or simple words\n"
-        "- Do not invent case facts"
+        "- Do not invent topic facts"
     )
 
     last_error = None

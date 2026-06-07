@@ -62,7 +62,7 @@ CAMB_SPEAKING_RATE = float(os.getenv("CAMB_SPEAKING_RATE", "1.04"))
 CAMB_USER_INSTRUCTIONS = os.getenv(
     "CAMB_USER_INSTRUCTIONS",
     (
-        "Sound like a calm friend explaining a strange true-crime case. "
+        "Sound like a calm friend explaining an interesting real topic. "
         "Keep the delivery continuous and human, with only tiny natural pauses. "
         "Speak at a brisk but clear pace, and do not drag the pacing."
     ),
@@ -82,7 +82,7 @@ FREETHEAI_TTS_TIMEOUT = int(os.getenv("FREETHEAI_TTS_TIMEOUT", "180"))
 FREETHEAI_TTS_INSTRUCTIONS = os.getenv(
     "FREETHEAI_TTS_INSTRUCTIONS",
     (
-        "Speak like a calm friend explaining a strange true-crime case. "
+        "Speak like a calm friend explaining an interesting real topic. "
         "Keep it continuous, natural, and easy to understand. "
         "Use a brisk but clear pace with tiny human pauses, never a news-reader tone."
     ),
@@ -112,11 +112,11 @@ VOICE_PLAN_BASE_URL = json_base_url("VOICE_PLAN_BASE_URL")
 VOICE_PLAN_API_KEY = json_api_key("VOICE_PLAN_API_KEY", base_url=VOICE_PLAN_BASE_URL)
 VOICE_PLAN_MODEL = resolve_json_model(json_model("VOICE_PLAN_MODEL"), VOICE_PLAN_BASE_URL, VOICE_PLAN_API_KEY)
 VOICE_PLAN_MAX_ATTEMPTS = int(os.getenv("VOICE_PLAN_MAX_ATTEMPTS", "3"))
-VOICE_PLAN_MAX_TOKENS = int(os.getenv("VOICE_PLAN_MAX_TOKENS", "4096"))
-VOICE_PLAN_TEMPERATURE = float(os.getenv("VOICE_PLAN_TEMPERATURE", "0.35"))
-VOICE_PLAN_TOP_P = float(os.getenv("VOICE_PLAN_TOP_P", "0.9"))
+VOICE_PLAN_MAX_TOKENS = int(os.getenv("VOICE_PLAN_MAX_TOKENS", "16384"))
+VOICE_PLAN_TEMPERATURE = float(os.getenv("VOICE_PLAN_TEMPERATURE", "1"))
+VOICE_PLAN_TOP_P = float(os.getenv("VOICE_PLAN_TOP_P", "0.95"))
 VOICE_PLAN_ENABLE_THINKING = os.getenv("VOICE_PLAN_ENABLE_THINKING", "1") == "1"
-VOICE_PLAN_REASONING_BUDGET = int(os.getenv("VOICE_PLAN_REASONING_BUDGET", "4096"))
+VOICE_PLAN_REASONING_BUDGET = int(os.getenv("VOICE_PLAN_REASONING_BUDGET", "16384"))
 VOICE_PLAN_MIN_SPEED_MULTIPLIER = float(os.getenv("VOICE_PLAN_MIN_SPEED_MULTIPLIER", "0.82"))
 VOICE_PLAN_MAX_SPEED_MULTIPLIER = float(os.getenv("VOICE_PLAN_MAX_SPEED_MULTIPLIER", "1.12"))
 VOICE_PLAN_MIN_GAIN_DB = float(os.getenv("VOICE_PLAN_MIN_GAIN_DB", "-2.5"))
@@ -338,8 +338,8 @@ def _default_voice_plan(chunks: list[str]) -> list[dict]:
         {
             "index": i + 1,
             "text": chunk,
-            "delivery": "quiet friend explaining a strange case",
-            "emotion": "uneasy suspense",
+            "delivery": "quiet friend explaining an interesting topic",
+            "emotion": "curious focus",
             "speed_multiplier": 1.0,
             "gain_db": 0.0,
             "pause_after_ms": _natural_pause_ms(i, len(chunks), chunk),
@@ -369,11 +369,11 @@ def _video_context(video_data: dict, chunks: list[str]) -> dict:
 def _build_voice_plan_prompt(video_data: dict, chunks: list[str]) -> str:
     context = _video_context(video_data, chunks)
     return (
-        "You are a professional voice director for short-form true-crime narration. "
+        "You are a professional voice director for dynamic short-form narration. "
         "Create ONLY an in-memory voice direction plan for text-to-speech narration. "
         "Do NOT rewrite, paraphrase, summarize, translate, censor, or add new narration. "
         "Do NOT add slang to the script. Use respectful suspense, not comedy. "
-        "Direct it like a friend quietly explaining something suspicious, not like a news anchor. "
+        "Direct it like a friend clearly explaining something interesting, not like a news anchor. "
         "Return ONE valid JSON object ONLY with this exact shape: "
         "{\"scenes\":[{\"index\":1,\"delivery\":\"...\",\"emotion\":\"...\","
         "\"speed_multiplier\":1.0,\"gain_db\":0.0,\"pause_after_ms\":0,"
@@ -449,8 +449,8 @@ def _coerce_voice_plan(data: dict, chunks: list[str]) -> list[dict] | None:
             {
                 "index": i,
                 "text": chunk,
-                "delivery": _clean_short_text(scene.get("delivery"), 90) or "quiet friend explaining a strange case",
-                "emotion": _clean_short_text(scene.get("emotion"), 60) or "uneasy suspense",
+                "delivery": _clean_short_text(scene.get("delivery"), 90) or "quiet friend explaining an interesting topic",
+                "emotion": _clean_short_text(scene.get("emotion"), 60) or "curious focus",
                 "speed_multiplier": _clamp_float(
                     scene.get("speed_multiplier"),
                     1.0,

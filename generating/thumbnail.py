@@ -62,10 +62,10 @@ THUMBNAIL_PLAN_MODEL = resolve_json_model(
     THUMBNAIL_PLAN_API_KEY,
 )
 THUMBNAIL_PLAN_MAX_ATTEMPTS = int(os.getenv("THUMBNAIL_PLAN_MAX_ATTEMPTS", "3"))
-THUMBNAIL_PLAN_MAX_TOKENS = int(os.getenv("THUMBNAIL_PLAN_MAX_TOKENS", "2048"))
-THUMBNAIL_PLAN_REASONING_BUDGET = int(os.getenv("THUMBNAIL_PLAN_REASONING_BUDGET", "2048"))
-THUMBNAIL_PLAN_TEMPERATURE = float(os.getenv("THUMBNAIL_PLAN_TEMPERATURE", "0.35"))
-THUMBNAIL_PLAN_TOP_P = float(os.getenv("THUMBNAIL_PLAN_TOP_P", "0.9"))
+THUMBNAIL_PLAN_MAX_TOKENS = int(os.getenv("THUMBNAIL_PLAN_MAX_TOKENS", "16384"))
+THUMBNAIL_PLAN_REASONING_BUDGET = int(os.getenv("THUMBNAIL_PLAN_REASONING_BUDGET", "16384"))
+THUMBNAIL_PLAN_TEMPERATURE = float(os.getenv("THUMBNAIL_PLAN_TEMPERATURE", "1"))
+THUMBNAIL_PLAN_TOP_P = float(os.getenv("THUMBNAIL_PLAN_TOP_P", "0.95"))
 THUMBNAIL_PLAN_ENABLE_THINKING = os.getenv("THUMBNAIL_PLAN_ENABLE_THINKING", "1") == "1"
 THUMBNAIL_PLAN_PICK_IMAGE = os.getenv("THUMBNAIL_PLAN_PICK_IMAGE", "1") == "1"
 THUMBNAIL_PLAN_USE_POSITION = os.getenv("THUMBNAIL_PLAN_USE_POSITION", "1") == "1"
@@ -257,7 +257,7 @@ def _build_thumbnail_prompt(item: dict[str, Any]) -> str:
     retention = item.get("retention_triggers") if isinstance(item.get("retention_triggers"), list) else []
 
     return (
-        "You are a YouTube Shorts thumbnail director for a safe true-crime mystery channel. "
+        "You are a YouTube Shorts thumbnail director for a safe dynamic topic-driven channel. "
         "Return ONE valid JSON object ONLY. No markdown, no commentary, no code block. "
         "Do NOT rewrite the story. Do NOT invent facts. Use only the provided video context. "
         "Create short thumbnail overlay text that is readable on mobile and creates curiosity. "

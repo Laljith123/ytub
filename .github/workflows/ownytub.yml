@@ -51,12 +51,12 @@ jobs:
       - name: Check Generation Secrets
         shell: pwsh
         env:
-          APIFREELLM_API_KEY: ${{ secrets.APIFREELLM_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           FREETHEAI_API_KEY: ${{ secrets.FREETHEAI_API_KEY }}
           CAMB_API_KEY: ${{ secrets.CAMB_API_KEY }}
         run: |
-          if (-not $env:APIFREELLM_API_KEY) {
-            throw "Missing GitHub secret APIFREELLM_API_KEY. Add your APIFreeLLM key as a repository secret."
+          if (-not $env:NVIDIA_API_KEY) {
+            throw "Missing GitHub secret NVIDIA_API_KEY. Text generation now uses NVIDIA Nemotron."
           }
           if (-not $env:FREETHEAI_API_KEY) {
             echo "::warning::Missing GitHub secret FREETHEAI_API_KEY. FreeTheAi image/TTS will be skipped unless another fallback provider is configured."
@@ -64,7 +64,7 @@ jobs:
           if (-not $env:CAMB_API_KEY) {
             echo "::warning::Missing GitHub secret CAMB_API_KEY. Voice will use FreeTheAi if configured, then Edge TTS."
           } else {
-            echo "APIFREELLM_API_KEY and CAMB_API_KEY are configured. Text uses APIFreeLLM; voice order is FreeTheAi, CAMB, then Edge TTS."
+            echo "NVIDIA_API_KEY and CAMB_API_KEY are configured. Text uses NVIDIA Nemotron; voice order is FreeTheAi, CAMB, then Edge TTS."
           }
 
       # 🎲 Always run, but randomize how many to generate (>=1)
@@ -95,21 +95,18 @@ jobs:
       - name: Run Pipeline + Upload
         if: env.RUN_PIPELINE == '1'
         env:
-          APIFREELLM_API_KEY: ${{ secrets.APIFREELLM_API_KEY }}
           FREETHEAI_API_KEY: ${{ secrets.FREETHEAI_API_KEY }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           CAMB_API_KEY: ${{ secrets.CAMB_API_KEY }}
-          BLUESMINDS_API_KEY: ${{ secrets.BLUESMINDS_API_KEY }}
-          JSON_API_KEY: ${{ secrets.APIFREELLM_API_KEY }}
-          JSON_BASE_URL: ${{ vars.JSON_BASE_URL || 'https://apifreellm.com/api/v1' }}
-          JSON_MODEL: ${{ vars.JSON_MODEL || 'apifreellm' }}
+          JSON_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          JSON_BASE_URL: ${{ vars.JSON_BASE_URL || 'https://integrate.api.nvidia.com/v1' }}
+          JSON_MODEL: ${{ vars.JSON_MODEL || 'nvidia/nemotron-3-ultra-550b-a55b' }}
           JSON_MODEL_DISCOVERY_ENABLED: "0"
-          JSON_MODEL_CANDIDATES: "gpt-4o,gpt-5-chat,grok-4.20-0309-non-reasoning,openai/gpt-4o-mini,gpt-4o-mini"
           JSON_EXTRA_BODY_ENABLED: ${{ vars.JSON_EXTRA_BODY_ENABLED }}
-          JSON_COMPLETION_TIMEOUT: "180"
-          APIFREELLM_REQUEST_INTERVAL_SECONDS: "20"
-          APIFREELLM_MAX_ATTEMPTS: "4"
-          APIFREELLM_RETRY_WAIT_SECONDS: "20"
+          JSON_COMPLETION_TIMEOUT: "240"
+          NVIDIA_JSON_RPM_LIMIT: "40"
+          NVIDIA_JSON_MAX_ATTEMPTS: "3"
+          NVIDIA_JSON_RETRY_WAIT_SECONDS: "20"
           FREETHEAI_RPM_LIMIT: "10"
           RATE_LIMIT_CUSHION_SECONDS: "12"
           FREETHEAI_MAX_ATTEMPTS: "4"
@@ -121,12 +118,12 @@ jobs:
           FREETHEAI_TTS_RESPONSE_FORMAT: "wav"
           FREETHEAI_TTS_TIMEOUT: "180"
           FREETHEAI_TTS_MAX_ATTEMPTS: "4"
-          FREETHEAI_TTS_INSTRUCTIONS: ${{ vars.FREETHEAI_TTS_INSTRUCTIONS || 'Speak like a calm friend explaining a strange true-crime case. Keep it continuous, natural, and easy to understand. Use a brisk but clear pace with tiny human pauses, never a news-reader tone.' }}
+          FREETHEAI_TTS_INSTRUCTIONS: ${{ vars.FREETHEAI_TTS_INSTRUCTIONS || 'Speak like a calm friend explaining an interesting real topic. Keep it continuous, natural, and easy to understand. Use a brisk but clear pace with tiny human pauses, never a news-reader tone.' }}
           CAMB_LANGUAGE: "en-us"
           CAMB_VOICE_ID: ${{ vars.CAMB_VOICE_ID }}
           CAMB_SPEECH_MODEL: ${{ vars.CAMB_SPEECH_MODEL }}
           CAMB_SPEAKING_RATE: ${{ vars.CAMB_SPEAKING_RATE || '1.04' }}
-          CAMB_USER_INSTRUCTIONS: ${{ vars.CAMB_USER_INSTRUCTIONS || 'Sound like a calm friend explaining a strange true-crime case. Keep the delivery continuous and human, with only tiny natural pauses. Speak at a brisk but clear pace, and do not drag the pacing.' }}
+          CAMB_USER_INSTRUCTIONS: ${{ vars.CAMB_USER_INSTRUCTIONS || 'Sound like a calm friend explaining an interesting real topic. Keep the delivery continuous and human, with only tiny natural pauses. Speak at a brisk but clear pace, and do not drag the pacing.' }}
           EDGE_TTS_VOICE: "en-US-GuyNeural"
           EDGE_TTS_RATE: ${{ vars.EDGE_TTS_RATE || '+8%' }}
           EDGE_TTS_VOLUME: "+0%"
@@ -144,6 +141,8 @@ jobs:
           HISTORY_JSON_PATH: ${{ github.workspace }}\generating\history.json
           UPLOAD_HISTORY_FILE: ${{ github.workspace }}\generating\history.json
           SAVE_UPLOAD_HISTORY: "1"
+          YOUTUBE_TAGS: ${{ vars.YOUTUBE_TAGS || 'shorts,ytshorts,youtubeshorts,shortsvideo,viral,trending,explained,story,interesting,documentary,learnsomething,newfacts,curiosity' }}
+          YOUTUBE_HASHTAGS: ${{ vars.YOUTUBE_HASHTAGS || '#shorts #ytshorts #youtubeshorts #shortsvideo #viral #trending #explained #interesting #facts #curiosity' }}
           CLEAN_OUTPUT_AFTER_UPLOAD: "1"
           CLEAN_OUTPUT_JSON_AFTER_UPLOAD: "1"
           PERSIST_HISTORY_FILES: ${{ github.workspace }}\generating\history.json
@@ -176,7 +175,7 @@ jobs:
           FREETHEAI_IMAGE_RETRIES: "3"
           FREETHEAI_IMAGE_PROMPT_PREFIX: "Create a cinematic, safe, non-graphic vertical YouTube Shorts image. No readable text, no logos, no gore."
           CONTENT_ENABLE_THINKING: "1"
-          CONTENT_STREAM: "0"
+          CONTENT_STREAM: "1"
           TRENDS_USE_PYTRENDS: "0"
           BACKGROUND_MUSIC_ENABLED: "1"
           BACKGROUND_MUSIC_GAIN: "1.6"
@@ -186,18 +185,21 @@ jobs:
           OPENVERSE_MUSIC_MAX_SECONDS: "600"
           OPENVERSE_MUSIC_PAGE_SIZE: "20"
           OPENVERSE_MUSIC_PAGES: "3"
-          # APIFreeLLM JSON prompt config.
-          CONTENT_BASE_URL: ${{ vars.CONTENT_BASE_URL || 'https://apifreellm.com/api/v1' }}
-          CONTENT_MODEL: ${{ vars.CONTENT_MODEL || 'apifreellm' }}
+          # NVIDIA Nemotron JSON prompt config.
+          CONTENT_BASE_URL: ${{ vars.CONTENT_BASE_URL || 'https://integrate.api.nvidia.com/v1' }}
+          CONTENT_MODEL: ${{ vars.CONTENT_MODEL || 'nvidia/nemotron-3-ultra-550b-a55b' }}
           NVIDIA_BASE_URL: "https://integrate.api.nvidia.com/v1"
 
           # Content.py new fields / retention config
           CONTENT_API_ENABLED: ${{ vars.CONTENT_API_ENABLED || '1' }}
+          CONTENT_TOPIC_PROFILE: ${{ vars.CONTENT_TOPIC_PROFILE || 'a fully dynamic YouTube Shorts channel that turns real, source-backed trends into natural friend-style explainers' }}
           CONTENT_MAX_ATTEMPTS: "3"
-          CONTENT_MAX_TOKENS: "3072"
-          CONTENT_REASONING_BUDGET: "0"
+          CONTENT_MAX_TOKENS: "16384"
+          CONTENT_TEMPERATURE: "1"
+          CONTENT_TOP_P: "0.95"
+          CONTENT_REASONING_BUDGET: "16384"
           CONTENT_USED_PROMPT_LIMIT: "60"
-          CONTENT_LOCAL_FALLBACK_ENABLED: "1"
+          CONTENT_LOCAL_FALLBACK_ENABLED: "0"
           CONTENT_TITLE_MAX_CHARS: "80"
           CONTENT_HOOK_MAX_WORDS: "18"
           CONTENT_CAPTION_MAX_CHARS: "220"
@@ -209,14 +211,14 @@ jobs:
 
           # Voice.py Riva voice-plan config
           VOICE_PLAN_ENABLED: "0"
-          VOICE_PLAN_MODEL: ${{ vars.VOICE_PLAN_MODEL || 'apifreellm' }}
-          VOICE_PLAN_BASE_URL: ${{ vars.VOICE_PLAN_BASE_URL || 'https://apifreellm.com/api/v1' }}
+          VOICE_PLAN_MODEL: ${{ vars.VOICE_PLAN_MODEL || 'nvidia/nemotron-3-ultra-550b-a55b' }}
+          VOICE_PLAN_BASE_URL: ${{ vars.VOICE_PLAN_BASE_URL || 'https://integrate.api.nvidia.com/v1' }}
           VOICE_PLAN_MAX_ATTEMPTS: "3"
-          VOICE_PLAN_MAX_TOKENS: "4096"
-          VOICE_PLAN_TEMPERATURE: "0.35"
-          VOICE_PLAN_TOP_P: "0.9"
+          VOICE_PLAN_MAX_TOKENS: "16384"
+          VOICE_PLAN_TEMPERATURE: "1"
+          VOICE_PLAN_TOP_P: "0.95"
           VOICE_PLAN_ENABLE_THINKING: "1"
-          VOICE_PLAN_REASONING_BUDGET: "4096"
+          VOICE_PLAN_REASONING_BUDGET: "16384"
           VOICE_PLAN_MIN_SPEED_MULTIPLIER: "1"
           VOICE_PLAN_MAX_SPEED_MULTIPLIER: "1.2"
           VOICE_PLAN_MIN_GAIN_DB: "-2.5"
@@ -233,13 +235,13 @@ jobs:
 
           # Thumbnail.py AI planner config
           THUMBNAIL_PLAN_ENABLED: "1"
-          THUMBNAIL_PLAN_MODEL: ${{ vars.THUMBNAIL_PLAN_MODEL || 'apifreellm' }}
-          THUMBNAIL_PLAN_BASE_URL: ${{ vars.THUMBNAIL_PLAN_BASE_URL || 'https://apifreellm.com/api/v1' }}
+          THUMBNAIL_PLAN_MODEL: ${{ vars.THUMBNAIL_PLAN_MODEL || 'nvidia/nemotron-3-ultra-550b-a55b' }}
+          THUMBNAIL_PLAN_BASE_URL: ${{ vars.THUMBNAIL_PLAN_BASE_URL || 'https://integrate.api.nvidia.com/v1' }}
           THUMBNAIL_PLAN_MAX_ATTEMPTS: "3"
-          THUMBNAIL_PLAN_MAX_TOKENS: "2048"
-          THUMBNAIL_PLAN_REASONING_BUDGET: "2048"
-          THUMBNAIL_PLAN_TEMPERATURE: "0.35"
-          THUMBNAIL_PLAN_TOP_P: "0.9"
+          THUMBNAIL_PLAN_MAX_TOKENS: "16384"
+          THUMBNAIL_PLAN_REASONING_BUDGET: "16384"
+          THUMBNAIL_PLAN_TEMPERATURE: "1"
+          THUMBNAIL_PLAN_TOP_P: "0.95"
           THUMBNAIL_PLAN_ENABLE_THINKING: "1"
           THUMBNAIL_PLAN_PICK_IMAGE: "1"
           THUMBNAIL_PLAN_USE_POSITION: "1"
@@ -251,19 +253,21 @@ jobs:
           # Trend.py collector + AI judge config
           TRENDS_USE_GOOGLE_NEWS: "1"
           TRENDS_USE_YOUTUBE_SUGGEST: "1"
-          TRENDS_USE_AI_JUDGE: "0"
+          TRENDS_USE_AI_JUDGE: "1"
+          TRENDS_TOPIC_MODE: ${{ vars.TRENDS_TOPIC_MODE || 'dynamic' }}
+          TRENDS_CHANNEL_PROFILE: ${{ vars.TRENDS_CHANNEL_PROFILE || 'a fully dynamic YouTube Shorts channel that explains real, source-backed trends across categories' }}
           TRENDS_KEYWORD_SAMPLE: "8"
           TRENDS_KEYWORD_MODE: "random"
           TRENDS_NEWS_LIMIT_PER_KEYWORD: "8"
           TRENDS_YT_SUGGEST_LIMIT_PER_KEYWORD: "10"
-          TRENDS_AI_MODEL: ${{ vars.TRENDS_AI_MODEL || 'apifreellm' }}
-          TRENDS_AI_BASE_URL: ${{ vars.TRENDS_AI_BASE_URL || 'https://apifreellm.com/api/v1' }}
+          TRENDS_AI_MODEL: ${{ vars.TRENDS_AI_MODEL || 'nvidia/nemotron-3-ultra-550b-a55b' }}
+          TRENDS_AI_BASE_URL: ${{ vars.TRENDS_AI_BASE_URL || 'https://integrate.api.nvidia.com/v1' }}
           TRENDS_AI_MAX_ATTEMPTS: "3"
-          TRENDS_AI_MAX_TOKENS: "1024"
-          TRENDS_AI_TEMPERATURE: "0.25"
-          TRENDS_AI_TOP_P: "0.9"
+          TRENDS_AI_MAX_TOKENS: "16384"
+          TRENDS_AI_TEMPERATURE: "1"
+          TRENDS_AI_TOP_P: "0.95"
           TRENDS_AI_ENABLE_THINKING: "1"
-          TRENDS_AI_REASONING_BUDGET: "4096"
+          TRENDS_AI_REASONING_BUDGET: "16384"
           TRENDS_AI_CANDIDATE_LIMIT: "30"
           TRENDS_SELECTED_COUNT: "5"
           TRENDS_COLLISION_SIM: "0.72"
@@ -272,14 +276,14 @@ jobs:
           OUTPUT_JSON_PATH: ${{ github.workspace }}\output.json
           #youtube
           YOUTUBE_METADATA_AI_ENABLED: "1"
-          YOUTUBE_METADATA_MODEL: ${{ vars.YOUTUBE_METADATA_MODEL || 'apifreellm' }}
-          YOUTUBE_METADATA_BASE_URL: ${{ vars.YOUTUBE_METADATA_BASE_URL || 'https://apifreellm.com/api/v1' }}
+          YOUTUBE_METADATA_MODEL: ${{ vars.YOUTUBE_METADATA_MODEL || 'nvidia/nemotron-3-ultra-550b-a55b' }}
+          YOUTUBE_METADATA_BASE_URL: ${{ vars.YOUTUBE_METADATA_BASE_URL || 'https://integrate.api.nvidia.com/v1' }}
           YOUTUBE_METADATA_MAX_ATTEMPTS: "3"
-          YOUTUBE_METADATA_MAX_TOKENS: "2048"
-          YOUTUBE_METADATA_TEMPERATURE: "0.35"
-          YOUTUBE_METADATA_TOP_P: "0.9"
+          YOUTUBE_METADATA_MAX_TOKENS: "16384"
+          YOUTUBE_METADATA_TEMPERATURE: "1"
+          YOUTUBE_METADATA_TOP_P: "0.95"
           YOUTUBE_METADATA_ENABLE_THINKING: "1"
-          YOUTUBE_METADATA_REASONING_BUDGET: "4096"
+          YOUTUBE_METADATA_REASONING_BUDGET: "16384"
           YOUTUBE_METADATA_TITLE_MAX_CHARS: "75"
           YOUTUBE_METADATA_DESCRIPTION_MAX_CHARS: "1200"
           YOUTUBE_METADATA_TAG_MIN_COUNT: "8"

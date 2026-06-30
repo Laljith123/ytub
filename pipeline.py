@@ -19,6 +19,11 @@ VIDEO_DIR = OUTPUT_DIR / "video"
 FINAL_VIDEO_SILENT = VIDEO_DIR / "final_silent.mp4"
 QUEUE_DIR = Path(os.getenv("UPLOAD_QUEUE_DIR", str(OUTPUT_DIR / "queue")))
 GENERATE_COUNT = int(os.getenv("GENERATE_COUNT", "1"))
+# Hard per-stage wall-clock cap. A single sub-step (e.g. image generation) can
+# never hang the whole job for ~an hour; if it exceeds this it is terminated and
+# the run fails fast instead of stalling. Override per stage where needed.
+STAGE_TIMEOUT_SECONDS = int(os.getenv("STAGE_TIMEOUT_SECONDS", "1200"))
+IMAGE_STAGE_TIMEOUT_SECONDS = int(os.getenv("IMAGE_STAGE_TIMEOUT_SECONDS", "1500"))
 RUN_UPLOAD = os.getenv("RUN_UPLOAD", "0") == "1"
 UPLOAD_EACH = os.getenv("UPLOAD_EACH", "1") == "1"
 BACKGROUND_MUSIC_ENABLED = os.getenv("BACKGROUND_MUSIC_ENABLED", "1") == "1"
@@ -29,9 +34,16 @@ PERSIST_HISTORY_FILES = os.getenv(
 )
 
 
-def _run(script: str, env: dict[str, str] | None = None) -> None:
+def _run(script: str, env: dict[str, str] | None = None, timeout: int | None = None) -> None:
     cmd = [sys.executable, str(ROOT / script)]
-    subprocess.run(cmd, check=True, env=env)
+    limit = timeout if timeout is not None else STAGE_TIMEOUT_SECONDS
+    try:
+        subprocess.run(cmd, check=True, env=env, timeout=limit)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"Stage '{script}' exceeded its {limit}s time budget and was terminated "
+            f"(likely a stalled external API). Failing fast instead of hanging."
+        ) from exc
 
 
 def _has_audio_chunks() -> bool:
@@ -232,7 +244,7 @@ def main() -> None:
         voice_env["VOICE_CLEANUP"] = "0"
         _run_voice_with_retries(voice_env)
 
-        _run("generating/images.py")
+        _run("generating/images.py", timeout=IMAGE_STAGE_TIMEOUT_SECONDS)
 
         if BACKGROUND_MUSIC_ENABLED:
             _run("generating/music.py")

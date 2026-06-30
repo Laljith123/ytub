@@ -31,6 +31,13 @@ NVIDIA_FLUX2_SUPPORTED_SIZES = [
 ]
 NVIDIA_FLUX2_WIDTH = int(os.getenv("NVIDIA_FLUX2_WIDTH", "752"))
 NVIDIA_FLUX2_HEIGHT = int(os.getenv("NVIDIA_FLUX2_HEIGHT", "1392"))
+# Hard wall-clock cap for a single backend's request+retry loop, so a stalled
+# endpoint can never hang a stage for tens of minutes. With two NVIDIA backends
+# this bounds one image to ~2x this value before failing fast.
+NVIDIA_IMAGE_MAX_SECONDS = float(os.getenv("NVIDIA_IMAGE_MAX_SECONDS", "150"))
+# If every backend fails for one scene, reuse the previous good frame instead of
+# aborting the whole video. The first scene still hard-fails if it has no prior image.
+IMAGE_FALLBACK_REUSE_LAST = os.getenv("IMAGE_FALLBACK_REUSE_LAST", "1") == "1"
 
 FREETHEAI_BASE_URL = os.getenv("FREETHEAI_BASE_URL", "https://api.freetheai.xyz/v1").rstrip("/")
 FREETHEAI_IMAGE_URL = os.getenv("FREETHEAI_IMAGE_URL", f"{FREETHEAI_BASE_URL}/images/generations")
@@ -278,6 +285,7 @@ def _save_nvidia_image(
         timeout=timeout,
         retries=retries,
         backoff=backoff,
+        max_total_seconds=NVIDIA_IMAGE_MAX_SECONDS,
     )
     if response.status_code == 422 and width is not None and height is not None:
         payload = _build_payload(
@@ -378,6 +386,7 @@ def _save_nvidia_flux2_image(
             retries=retries,
             backoff=backoff,
             url=NVIDIA_FLUX2_URL,
+            max_total_seconds=NVIDIA_IMAGE_MAX_SECONDS,
         )
         last_response = response
         if response.status_code not in {400, 422}:
@@ -480,14 +489,26 @@ def _post_with_retries(
     retries: int,
     backoff: float,
     url: str = INVOKE_URL,
+    max_total_seconds: float | None = None,
 ) -> requests.Response:
     last_exc: Exception | None = None
+    last_response: requests.Response | None = None
     current_timeout = timeout
+    start = time.monotonic()
+
+    def _budget_exhausted(extra: float = 0.0) -> bool:
+        if max_total_seconds is None:
+            return False
+        return (time.monotonic() - start) + extra >= max_total_seconds
+
     for attempt in range(1, retries + 1):
+        if _budget_exhausted():
+            break
         try:
             if "api.freetheai.xyz" in str(url).lower():
                 wait_for_provider_slot("FreeTheAi", rpm_env="FREETHEAI_RPM_LIMIT", default_rpm=10)
             response = requests.post(url, headers=headers, json=payload, timeout=current_timeout)
+            last_response = response
             if response.status_code in {429, 500, 502, 503, 504}:
                 if attempt == retries:
                     return response
@@ -498,6 +519,8 @@ def _post_with_retries(
                     sleep_for = retry_after_seconds(retry_after, default=backoff * attempt)
                 else:
                     sleep_for = backoff * attempt
+                if _budget_exhausted(sleep_for):
+                    return response
                 print(
                     f"Request returned {response.status_code}. Retrying in {sleep_for:.1f}s "
                     f"(attempt {attempt}/{retries})..."
@@ -511,13 +534,22 @@ def _post_with_retries(
             if attempt == retries:
                 raise
             sleep_for = backoff * attempt
+            if _budget_exhausted(sleep_for):
+                raise
             print(
                 f"Request timed out. Retrying in {sleep_for:.1f}s "
                 f"(attempt {attempt}/{retries})..."
             )
             time.sleep(sleep_for)
             current_timeout = int(current_timeout * 1.25)
-    raise RuntimeError("Request failed after retries.") from last_exc
+
+    if last_response is not None:
+        return last_response
+    if last_exc is not None:
+        raise RuntimeError(
+            f"Request failed within the {max_total_seconds}s budget."
+        ) from last_exc
+    raise RuntimeError("Request failed after retries.")
 
 
 def _ensure_target_image(path: Path, width: int, height: int) -> None:
@@ -598,7 +630,7 @@ def main() -> None:
     steps = _get_optional_int_env("NVIDIA_IMAGE_STEPS") or DEFAULT_STEPS
     disable_size = os.getenv("NVIDIA_IMAGE_DISABLE_SIZE") == "1"
     add_aspect_hint = os.getenv("NVIDIA_IMAGE_PROMPT_ASPECT", "1") == "1"
-    timeout = _get_optional_int_env("NVIDIA_IMAGE_TIMEOUT") or 240
+    timeout = _get_optional_int_env("NVIDIA_IMAGE_TIMEOUT") or 120
     retries = _get_optional_int_env("NVIDIA_IMAGE_RETRIES") or 3
     backoff = float(os.getenv("NVIDIA_IMAGE_RETRY_BACKOFF", "1.5"))
     delay = float(os.getenv("NVIDIA_IMAGE_DELAY", "1"))
@@ -608,6 +640,7 @@ def main() -> None:
         width = DEFAULT_WIDTH
         height = DEFAULT_HEIGHT
 
+    last_good_path: Path | None = None
     for idx, prompt in enumerate(prompts, start=1):
         filename = f"image_{idx:02d}.png"
         out_path = OUT_DIR / filename
@@ -676,10 +709,20 @@ def main() -> None:
             errors.append(f"{backend}: unsupported image backend")
 
         if not saved_with:
-            raise RuntimeError("All image backends failed. " + " | ".join(errors))
+            if IMAGE_FALLBACK_REUSE_LAST and last_good_path is not None and last_good_path.exists():
+                shutil.copy2(last_good_path, out_path)
+                saved_with = "reuse-previous-image"
+                print(
+                    f"All image backends failed for image {idx:02d}; "
+                    f"reusing previous image so the video still builds. "
+                    f"({' | '.join(errors)})"
+                )
+            else:
+                raise RuntimeError("All image backends failed. " + " | ".join(errors))
 
         if width is not None and height is not None and not disable_size:
             _ensure_target_image(out_path, width, height)
+        last_good_path = out_path
         print(f"Saved {out_path} via {saved_with}")
         if delay > 0:
             time.sleep(delay)

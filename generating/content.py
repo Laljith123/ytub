@@ -117,6 +117,12 @@ PROMPT_STYLE_NOTE = os.getenv(
     "CONTENT_STYLE_NOTE",
     "natural friend explaining clearly, curious and skeptical but respectful, goosebump tension when the topic supports it, never news-reader, no repeated template phrases",
 )
+PROMPT_IMAGE_STYLE_NOTE = os.getenv(
+    "CONTENT_IMAGE_STYLE_NOTE",
+    "photorealistic cinematic documentary still, specific real-world subject and setting, "
+    "natural directional lighting, shallow depth of field, realistic textures and materials, "
+    "a clear color palette that matches the mood, no on-screen text, no logos, no watermark",
+)
 BANNED_SCRIPT_PHRASES = tuple(
     phrase.strip().lower()
     for phrase in os.getenv(
@@ -1729,18 +1735,18 @@ def _build_prompt(trends: list[str], repeated: list[str], channel_titles: list[s
         "5. script and image lists MUST be the SAME LENGTH. "
         f"6. Total scenes: {MIN_SCENES}-{MAX_SCENES} scenes, about one scene every {int(SCENE_SECONDS)} seconds. "
         f"7. Each script item = 1-2 short spoken sentences, tight pacing around {int(SCENE_SECONDS)} seconds per clip. "
-        "8. Every script item MUST add one new concrete fact, clue, decision, location, time shift, consequence, or turning point. "
+        "8. Every script item MUST add one new concrete, specific, verifiable fact, clue, decision, location, time shift, consequence, or turning point, with no vague filler generalizations. "
         "9. No filler, no recap, no repeated phrasing, no generic niche-template lines. "
         "10. Include only core facts: who, what, where, when, how, what was strange, and why it still matters if known. "
-        "11. Make the narration human and suspicious, like a friend saying, 'listen to this part.' Use short questions, natural pauses, and sudden-stop beats. "
+        "11. Make the narration human and suspicious, like a friend saying, 'listen to this part.' Use short questions, natural pauses, and sudden-stop beats. Keep every statement accurate and specific; prefer precise, checkable details over hype, and clearly mark anything uncertain as uncertain. "
         "12. Do NOT use slang, memes, stage directions, or anchor phrases. Avoid words like lowkey, no cap, hold up, breaking news, and let's dive in. "
         "13. Be respectful when the topic involves real people, harm, money, health, politics, or private lives. "
         "14. The final script item MUST ask viewers for comments, theories, thoughts, or what they noticed, "
         "and it MUST end with a question. Make this line original every time; do NOT use a fixed template sentence. "
-        "15. Images MUST be cinematic, photorealistic, documentary b-roll visuals matched to each narration scene. "
-        "16. Each image prompt MUST include a clear subject, setting, time-of-day, action, vertical 9:16 framing, and one camera cue. "
+        "15. Each image prompt MUST visually depict the exact concrete content of its matching narration scene (same subject, same place, same objects, same moment), so the visuals and the voice stay tightly aligned. "
+        f"16. Image style and quality: {PROMPT_IMAGE_STYLE_NOTE}. Every image prompt MUST name a clear main subject, the setting/background, time-of-day, weather, lighting direction, mood, one specific action or moment, vertical 9:16 framing, and one camera cue. "
         f"17. Camera cues can follow this style: {camera_cue_line}. "
-        "18. People, clothing, props, weather, and locations MUST stay consistent across scenes where applicable. "
+        "18. Keep recurring people, clothing, props, color palette, weather, and locations visually consistent across every scene, and re-describe them concretely in each prompt instead of referring back to earlier scenes. "
         "19. Do NOT show graphic, disturbing, exploitative, or inappropriate imagery. "
         "20. Do NOT mention unrelated pop culture. If the chosen topic itself is about media, art, celebrities, or internet culture, discuss it factually and avoid copying copyrighted characters, logos, or exact visual styles in image prompts. "
         "21. Do NOT include scene labels, timestamps, camera metadata labels, or quotes outside JSON. "

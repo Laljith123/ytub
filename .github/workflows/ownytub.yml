@@ -167,7 +167,13 @@ jobs:
           NVIDIA_IMAGE_RETRIES: "10"
           NVIDIA_IMAGE_RETRY_BACKOFF: "3"
           NVIDIA_IMAGE_DELAY: "3"
-          IMAGE_BACKEND_ORDER: "freetheai,nvidia"
+          # Image generation: NVIDIA FLUX.2-klein-4B is primary (autonomous, only needs
+          # the static nvapi- key, no daily check-in), then FLUX.1-schnell, then FreeTheAi.
+          IMAGE_BACKEND_ORDER: "nvidia_flux2,nvidia,freetheai"
+          NVIDIA_FLUX2_WIDTH: "752"
+          NVIDIA_FLUX2_HEIGHT: "1392"
+          IMAGE_PROMPT_QUALITY_SUFFIX: ${{ vars.IMAGE_PROMPT_QUALITY_SUFFIX || 'photorealistic, high detail, sharp focus, natural realistic lighting, true-to-life colors, professional cinematography, no text, no watermark, no logo' }}
+          CONTENT_IMAGE_STYLE_NOTE: ${{ vars.CONTENT_IMAGE_STYLE_NOTE || 'photorealistic cinematic documentary still, specific real-world subject and setting, natural directional lighting, shallow depth of field, realistic textures and materials, a clear color palette that matches the mood, no on-screen text, no logos, no watermark' }}
           FREETHEAI_IMAGE_MODEL: ${{ vars.FREETHEAI_IMAGE_MODEL || 'img/gpt-image-2' }}
           FREETHEAI_IMAGE_SIZE: ${{ vars.FREETHEAI_IMAGE_SIZE || '1024x1536' }}
           FREETHEAI_IMAGE_RESPONSE_FORMAT: "b64_json"

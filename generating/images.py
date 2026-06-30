@@ -16,7 +16,22 @@ try:
 except ImportError:  # pragma: no cover - used when imported as generating.images
     from generating.rate_limit import retry_after_seconds, wait_for_provider_slot
 
-INVOKE_URL = "https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-schnell"
+NVIDIA_GENAI_BASE_URL = os.getenv("NVIDIA_GENAI_BASE_URL", "https://ai.api.nvidia.com/v1/genai").rstrip("/")
+INVOKE_URL = os.getenv("NVIDIA_IMAGE_INVOKE_URL", f"{NVIDIA_GENAI_BASE_URL}/black-forest-labs/flux.1-schnell")
+# FLUX.2-klein-4B: NVIDIA-hosted, authenticated only with the static nvapi- key
+# (no daily check-in / no human step), unified generation + editing, fast.
+NVIDIA_FLUX2_URL = os.getenv("NVIDIA_FLUX2_IMAGE_URL", f"{NVIDIA_GENAI_BASE_URL}/black-forest-labs/flux.2-klein-4b")
+# FLUX.2-klein-4B only accepts this fixed set of resolutions; we generate at the
+# closest vertical size, then ffmpeg pads/scales to the final 1080x1920 frame.
+NVIDIA_FLUX2_SUPPORTED_SIZES = [
+    (672, 1568), (688, 1504), (720, 1456), (752, 1392), (800, 1328),
+    (832, 1248), (880, 1184), (944, 1104), (1024, 1024), (1104, 944),
+    (1184, 880), (1248, 832), (1328, 800), (1392, 752), (1456, 720),
+    (1504, 688), (1568, 672),
+]
+NVIDIA_FLUX2_WIDTH = int(os.getenv("NVIDIA_FLUX2_WIDTH", "752"))
+NVIDIA_FLUX2_HEIGHT = int(os.getenv("NVIDIA_FLUX2_HEIGHT", "1392"))
+
 FREETHEAI_BASE_URL = os.getenv("FREETHEAI_BASE_URL", "https://api.freetheai.xyz/v1").rstrip("/")
 FREETHEAI_IMAGE_URL = os.getenv("FREETHEAI_IMAGE_URL", f"{FREETHEAI_BASE_URL}/images/generations")
 
@@ -32,7 +47,7 @@ DEFAULT_HEIGHT = 1920
 
 IMAGE_BACKEND_ORDER = [
     item.strip().lower()
-    for item in os.getenv("IMAGE_BACKEND_ORDER", "freetheai,nvidia").split(",")
+    for item in os.getenv("IMAGE_BACKEND_ORDER", "nvidia_flux2,nvidia,freetheai").split(",")
     if item.strip()
 ]
 FREETHEAI_IMAGE_MODEL = os.getenv("FREETHEAI_IMAGE_MODEL", "img/gpt-image-2").strip() or "img/gpt-image-2"
@@ -48,6 +63,16 @@ FREETHEAI_IMAGE_PROMPT_PREFIX = os.getenv(
         "No readable text, no logos, no gore. "
     ),
 )
+
+# Generic, model-agnostic prompt enhancement applied to the NVIDIA image backends.
+# These are universal photographic/quality cues (not per-topic keyword tables), and
+# every value is overridable via env so intent stays dynamic.
+IMAGE_PROMPT_PREFIX = os.getenv("IMAGE_PROMPT_PREFIX", FREETHEAI_IMAGE_PROMPT_PREFIX).strip()
+IMAGE_PROMPT_QUALITY_SUFFIX = os.getenv(
+    "IMAGE_PROMPT_QUALITY_SUFFIX",
+    "photorealistic, high detail, sharp focus, natural realistic lighting, "
+    "true-to-life colors, professional cinematography, no text, no watermark, no logo",
+).strip()
 
 
 _BASE64_RE = re.compile(r"^[A-Za-z0-9+/=\n\r]+$")
@@ -272,6 +297,97 @@ def _save_nvidia_image(
         )
     _raise_for_status_with_detail(response)
     _save_image_from_response(response, str(out_path))
+
+
+def _enhanced_image_prompt(prompt: str) -> str:
+    """Generic prompt enhancer for the NVIDIA image backends.
+
+    Wraps the model-written, scene-specific prompt with universal safety + quality
+    cues. It does NOT inject topic/genre keywords, so intent stays dynamic.
+    """
+    text = str(prompt or "").strip()
+    parts = [IMAGE_PROMPT_PREFIX, text] if IMAGE_PROMPT_PREFIX else [text]
+    combined = " ".join(part for part in parts if part).strip()
+    if IMAGE_PROMPT_QUALITY_SUFFIX:
+        combined = f"{combined}, {IMAGE_PROMPT_QUALITY_SUFFIX}".strip(", ").strip()
+    return combined or text
+
+
+def _nearest_flux2_size(width: int | None, height: int | None) -> tuple[int, int]:
+    req_w = width or NVIDIA_FLUX2_WIDTH
+    req_h = height or NVIDIA_FLUX2_HEIGHT
+    if (req_w, req_h) in NVIDIA_FLUX2_SUPPORTED_SIZES:
+        return req_w, req_h
+    target_ratio = req_w / req_h if req_h else 1.0
+    return min(
+        NVIDIA_FLUX2_SUPPORTED_SIZES,
+        key=lambda wh: abs((wh[0] / wh[1]) - target_ratio),
+    )
+
+
+def _save_nvidia_flux2_image(
+    prompt_text: str,
+    out_path: Path,
+    *,
+    headers: Dict[str, str],
+    timeout: int,
+    retries: int,
+    backoff: float,
+) -> None:
+    width, height = _nearest_flux2_size(NVIDIA_FLUX2_WIDTH, NVIDIA_FLUX2_HEIGHT)
+    try:
+        seed = int(os.getenv("NVIDIA_FLUX2_SEED", str(DEFAULT_SEED)) or DEFAULT_SEED)
+    except ValueError:
+        seed = DEFAULT_SEED
+    steps = _get_optional_int_env("NVIDIA_FLUX2_STEPS")
+
+    full_payload: Dict[str, Any] = {
+        "prompt": prompt_text,
+        "width": width,
+        "height": height,
+        "seed": seed,
+    }
+    if steps is not None and steps > 0:
+        full_payload["steps"] = steps
+    cfg_scale = os.getenv("NVIDIA_FLUX2_CFG_SCALE")
+    if cfg_scale:
+        try:
+            full_payload["cfg_scale"] = float(cfg_scale)
+        except ValueError:
+            pass
+
+    # Progressively strip optional fields if the endpoint rejects the request
+    # body (400/422), so a schema mismatch never hard-fails the backend.
+    payload_attempts: List[Dict[str, Any]] = [
+        full_payload,
+        {"prompt": prompt_text, "width": width, "height": height, "seed": seed},
+        {"prompt": prompt_text},
+    ]
+
+    last_response: requests.Response | None = None
+    seen: set[str] = set()
+    for payload in payload_attempts:
+        key = json.dumps(payload, sort_keys=True)
+        if key in seen:
+            continue
+        seen.add(key)
+        response = _post_with_retries(
+            payload,
+            headers=headers,
+            timeout=timeout,
+            retries=retries,
+            backoff=backoff,
+            url=NVIDIA_FLUX2_URL,
+        )
+        last_response = response
+        if response.status_code not in {400, 422}:
+            _raise_for_status_with_detail(response)
+            _save_image_from_response(response, str(out_path))
+            return
+
+    if last_response is not None:
+        _raise_for_status_with_detail(last_response)
+    raise RuntimeError("FLUX.2 image request failed before sending any payload.")
 
 
 def _load_last_image_prompts(path: Path) -> List[str]:
@@ -500,6 +616,27 @@ def main() -> None:
         saved_with = ""
         errors: list[str] = []
         for backend in IMAGE_BACKEND_ORDER:
+            if backend in {"nvidia_flux2", "nvidia-flux2", "flux2", "flux.2", "flux_2"}:
+                if not nvidia_available:
+                    errors.append("nvidia_flux2: unavailable")
+                    continue
+                try:
+                    print(f"Generating image {idx:02d} with NVIDIA FLUX.2-klein-4B.")
+                    _save_nvidia_flux2_image(
+                        _enhanced_image_prompt(prompt_text),
+                        out_path,
+                        headers=headers,
+                        timeout=timeout,
+                        retries=retries,
+                        backoff=backoff,
+                    )
+                    saved_with = "NVIDIA FLUX.2-klein-4B"
+                    break
+                except Exception as exc:
+                    errors.append(f"nvidia_flux2: {exc}")
+                    print(f"NVIDIA FLUX.2 image generation failed for image {idx:02d}: {exc}")
+                    continue
+
             if backend in {"freetheai", "free-the-ai", "freeai"}:
                 try:
                     print(f"Generating image {idx:02d} with FreeTheAi model {FREETHEAI_IMAGE_MODEL}.")
@@ -516,9 +653,9 @@ def main() -> None:
                     errors.append("nvidia: unavailable")
                     continue
                 try:
-                    print(f"Generating image {idx:02d} with NVIDIA fallback.")
+                    print(f"Generating image {idx:02d} with NVIDIA FLUX.1-schnell.")
                     _save_nvidia_image(
-                        prompt_text,
+                        _enhanced_image_prompt(prompt_text),
                         out_path,
                         headers=headers,
                         mode=mode,
@@ -529,7 +666,7 @@ def main() -> None:
                         retries=retries,
                         backoff=backoff,
                     )
-                    saved_with = "NVIDIA"
+                    saved_with = "NVIDIA FLUX.1-schnell"
                     break
                 except Exception as exc:
                     errors.append(f"nvidia: {exc}")

@@ -41,10 +41,14 @@ CHUNKS_DIR = OUTPUT_DIR / "chunks"
 OUTPUT_JSON = Path(os.getenv("OUTPUT_JSON_PATH", str(PROJECT_ROOT / "output.json")))
 FINAL_WAV = OUTPUT_DIR / "final.wav"
 
-TTS_BACKEND = os.getenv("TTS_BACKEND", "freetheai").strip().lower()
+# Voice/TTS backends. FreeTheAi is intentionally NOT in the default order because it
+# requires a daily manual Discord check-in (returns 403 'daily_checkin_required'),
+# which cannot run autonomously. Camb.ai is primary, Edge TTS is the always-available
+# fallback. Set TTS_BACKEND=freetheai explicitly only if you unlock its key manually.
+TTS_BACKEND = os.getenv("TTS_BACKEND", "camb").strip().lower()
 TTS_FALLBACK_BACKENDS = [
     item.strip().lower()
-    for item in os.getenv("TTS_FALLBACK_BACKENDS", "camb,edge").split(",")
+    for item in os.getenv("TTS_FALLBACK_BACKENDS", "edge").split(",")
     if item.strip()
 ]
 VOICE_SPEED = float(os.getenv("VOICE_SPEED", "1.08"))

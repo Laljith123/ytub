@@ -62,9 +62,9 @@ jobs:
             echo "::warning::Missing GitHub secret FREETHEAI_API_KEY. FreeTheAi image/TTS will be skipped unless another fallback provider is configured."
           }
           if (-not $env:CAMB_API_KEY) {
-            echo "::warning::Missing GitHub secret CAMB_API_KEY. Voice will use FreeTheAi if configured, then Edge TTS."
+            echo "::warning::Missing GitHub secret CAMB_API_KEY. Voice will use Edge TTS only."
           } else {
-            echo "NVIDIA_API_KEY and CAMB_API_KEY are configured. Text uses NVIDIA Nemotron; voice order is FreeTheAi, CAMB, then Edge TTS."
+            echo "NVIDIA_API_KEY and CAMB_API_KEY are configured. Text uses NVIDIA Nemotron; voice order is CAMB, then Edge TTS."
           }
 
       # 🎲 Always run, but randomize how many to generate (>=1)
@@ -110,9 +110,9 @@ jobs:
           FREETHEAI_RPM_LIMIT: "10"
           RATE_LIMIT_CUSHION_SECONDS: "12"
           FREETHEAI_MAX_ATTEMPTS: "4"
-          VOICE: "FreeTheAi"
-          TTS_BACKEND: "freetheai"
-          TTS_FALLBACK_BACKENDS: "camb,edge"
+          VOICE: "CAMB"
+          TTS_BACKEND: "camb"
+          TTS_FALLBACK_BACKENDS: "edge"
           FREETHEAI_TTS_MODEL: ${{ vars.FREETHEAI_TTS_MODEL || 'xai/grok-tts' }}
           FREETHEAI_TTS_VOICE: ${{ vars.FREETHEAI_TTS_VOICE || 'default' }}
           FREETHEAI_TTS_RESPONSE_FORMAT: "wav"

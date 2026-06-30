@@ -164,9 +164,14 @@ jobs:
           VOICE_PAUSE_VARIATION_MS: ${{ vars.VOICE_PAUSE_VARIATION_MS || '35' }}
           VOICE_FINAL_PAUSE_MS: ${{ vars.VOICE_FINAL_PAUSE_MS || '190' }}
           THUMBNAIL_SOURCE: "image"
-          NVIDIA_IMAGE_RETRIES: "10"
+          NVIDIA_IMAGE_RETRIES: "3"
           NVIDIA_IMAGE_RETRY_BACKOFF: "3"
-          NVIDIA_IMAGE_DELAY: "3"
+          NVIDIA_IMAGE_TIMEOUT: "120"
+          NVIDIA_IMAGE_MAX_SECONDS: "150"
+          NVIDIA_IMAGE_DELAY: "2"
+          # Hard caps so a stalled API can never hang a stage for ~an hour.
+          STAGE_TIMEOUT_SECONDS: "1200"
+          IMAGE_STAGE_TIMEOUT_SECONDS: "1500"
           # Image generation: NVIDIA FLUX.2-klein-4B is primary (autonomous, only needs
           # the static nvapi- key, no daily check-in), then FLUX.1-schnell, then FreeTheAi.
           IMAGE_BACKEND_ORDER: "nvidia_flux2,nvidia,freetheai"

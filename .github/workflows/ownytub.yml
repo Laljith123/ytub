@@ -52,19 +52,15 @@ jobs:
         shell: pwsh
         env:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           CAMB_API_KEY: ${{ secrets.CAMB_API_KEY }}
         run: |
           if (-not $env:NVIDIA_API_KEY) {
             throw "Missing GitHub secret NVIDIA_API_KEY. Text generation uses NVIDIA Nemotron."
           }
-          if (-not $env:GEMINI_API_KEY) {
-            throw "Missing GitHub secret GEMINI_API_KEY. Image generation uses Google Gemini Imagen."
-          }
           if (-not $env:CAMB_API_KEY) {
             throw "Missing GitHub secret CAMB_API_KEY. Voice generation uses Camb AI."
           }
-          echo "All provider keys configured: NVIDIA (text), Gemini (images), Camb AI (voice)."
+          echo "All provider keys configured: NVIDIA (text), Pollinations (images, keyless), Camb AI (voice)."
 
       # 🎲 Always run, but randomize how many to generate (>=1)
       - name: Random Generate Count
@@ -94,7 +90,6 @@ jobs:
       - name: Run Pipeline + Upload
         if: env.RUN_PIPELINE == '1'
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           CAMB_API_KEY: ${{ secrets.CAMB_API_KEY }}
           JSON_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
@@ -151,12 +146,8 @@ jobs:
           # Hard caps so a stalled API can never hang a stage for ~an hour.
           STAGE_TIMEOUT_SECONDS: "1200"
           IMAGE_STAGE_TIMEOUT_SECONDS: "1500"
-          # Image generation: Google Gemini Imagen (primary and only backend)
-          IMAGE_BACKEND_ORDER: "gemini"
-          GEMINI_IMAGE_MODEL: ${{ vars.GEMINI_IMAGE_MODEL || 'imagen-4.0-generate-001' }}
-          GEMINI_IMAGE_RETRIES: "3"
-          GEMINI_IMAGE_RETRY_BACKOFF: "3"
-          GEMINI_IMAGE_TIMEOUT: "120"
+          # Image generation: completely free, keyless Pollinations.ai
+          IMAGE_BACKEND_ORDER: "pollinations"
           VIDEO_TRANSITION_SECONDS: "0.25"
           VIDEO_TRANSITIONS: "fade,slideleft,slideright,wipeleft,wiperight,circlecrop,radial,fadeblack"
           IMAGE_PROMPT_QUALITY_SUFFIX: ${{ vars.IMAGE_PROMPT_QUALITY_SUFFIX || 'photorealistic, high detail, sharp focus, natural realistic lighting, true-to-life colors, professional cinematography, no text, no watermark, no logo' }}

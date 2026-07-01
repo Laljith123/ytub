@@ -54,15 +54,12 @@ DEFAULT_HEIGHT = 1920
 
 IMAGE_BACKEND_ORDER = [
     item.strip().lower()
-    for item in os.getenv("IMAGE_BACKEND_ORDER", "gemini").split(",")
+    for item in os.getenv("IMAGE_BACKEND_ORDER", "pollinations").split(",")
     if item.strip()
 ]
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "imagen-4.0-generate-001").strip()
-GEMINI_IMAGE_TIMEOUT = int(os.getenv("GEMINI_IMAGE_TIMEOUT", "120"))
-GEMINI_IMAGE_RETRIES = int(os.getenv("GEMINI_IMAGE_RETRIES", "3"))
-GEMINI_IMAGE_BACKOFF = float(os.getenv("GEMINI_IMAGE_RETRY_BACKOFF", "3"))
+POLLINATIONS_IMAGE_RETRIES = int(os.getenv("POLLINATIONS_IMAGE_RETRIES", "3"))
+POLLINATIONS_IMAGE_BACKOFF = float(os.getenv("POLLINATIONS_IMAGE_RETRY_BACKOFF", "3"))
 FREETHEAI_IMAGE_MODEL = os.getenv("FREETHEAI_IMAGE_MODEL", "img/gpt-image-2").strip() or "img/gpt-image-2"
 FREETHEAI_IMAGE_TIMEOUT = int(os.getenv("FREETHEAI_IMAGE_TIMEOUT", "240"))
 FREETHEAI_IMAGE_RETRIES = int(os.getenv("FREETHEAI_IMAGE_RETRIES", "3"))
@@ -602,59 +599,48 @@ def _clean_api_key(value: str | None) -> str:
     return key
 
 
-def _save_gemini_image(prompt_text: str, out_path: Path) -> None:
-    """Generate an image using Google Gemini Imagen API."""
-    if not GEMINI_API_KEY:
-        raise RuntimeError("GEMINI_API_KEY is missing.")
-
-    from google import genai
-    from google.genai import types
-
-    client = genai.Client(api_key=GEMINI_API_KEY)
+def _save_pollinations_image(prompt_text: str, out_path: Path, width: int | None, height: int | None, seed: int) -> None:
+    """Generate an image using the completely free Pollinations.ai API."""
+    import urllib.parse
+    
+    # We enforce a vertical default if sizes aren't specified.
+    req_w = width or 1080
+    req_h = height or 1920
+    
+    encoded_prompt = urllib.parse.quote(_enhanced_image_prompt(prompt_text))
+    # nologo=true removes the watermark on pollination images.
+    url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={req_w}&height={req_h}&seed={seed}&nologo=true"
+    
     last_exc: Exception | None = None
-    for attempt in range(1, GEMINI_IMAGE_RETRIES + 1):
+    for attempt in range(1, POLLINATIONS_IMAGE_RETRIES + 1):
         try:
-            response = client.models.generate_images(
-                model=GEMINI_IMAGE_MODEL,
-                prompt=_enhanced_image_prompt(prompt_text),
-                config=types.GenerateImagesConfig(
-                    number_of_images=1,
-                    output_mime_type="image/png",
-                ),
-            )
-            if not response.generated_images:
-                raise RuntimeError("Gemini returned no images.")
-            image_data = response.generated_images[0].image
-            if hasattr(image_data, "image_bytes") and image_data.image_bytes:
-                out_path.write_bytes(image_data.image_bytes)
-            else:
-                image_data.save(str(out_path))
+            response = requests.get(url, timeout=120)
+            _raise_for_status_with_detail(response)
+            
+            # They just return the raw image directly
+            content_type = response.headers.get("Content-Type", "")
+            if not content_type.startswith("image/"):
+                raise RuntimeError(f"Pollinations returned non-image content type: {content_type}")
+                
+            out_path.write_bytes(response.content)
             return
         except Exception as exc:
             last_exc = exc
-            if attempt < GEMINI_IMAGE_RETRIES:
-                sleep_for = GEMINI_IMAGE_BACKOFF * attempt
-                print(f"Gemini image attempt {attempt}/{GEMINI_IMAGE_RETRIES} failed: {exc}. Retrying in {sleep_for:.0f}s...")
+            if attempt < POLLINATIONS_IMAGE_RETRIES:
+                sleep_for = POLLINATIONS_IMAGE_BACKOFF * attempt
+                print(f"Pollinations image attempt {attempt}/{POLLINATIONS_IMAGE_RETRIES} failed: {exc}. Retrying in {sleep_for:.0f}s...")
                 time.sleep(sleep_for)
-    raise RuntimeError(f"Gemini image generation failed after {GEMINI_IMAGE_RETRIES} attempts: {last_exc}") from last_exc
+    raise RuntimeError(f"Pollinations image generation failed after {POLLINATIONS_IMAGE_RETRIES} attempts: {last_exc}") from last_exc
 
 
 def main() -> None:
     load_dotenv()
     api_key = _clean_api_key(os.getenv("NVIDIA_API_KEY"))
     nvidia_available = bool(api_key and api_key.startswith("nvapi-"))
-    gemini_available = bool(GEMINI_API_KEY)
     if not api_key:
         print("NVIDIA_API_KEY is not set. NVIDIA image fallback will be skipped.")
-    if not gemini_available:
-        print("GEMINI_API_KEY is not set. Gemini image backend will be skipped.")
     if not IMAGE_BACKEND_ORDER:
         raise RuntimeError("IMAGE_BACKEND_ORDER is empty.")
-    has_any_backend = gemini_available or nvidia_available
-    if not has_any_backend:
-        raise RuntimeError(
-            "No usable image backend is available. Set GEMINI_API_KEY or NVIDIA_API_KEY."
-        )
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     _cleanup_old_images(OUT_DIR)
@@ -691,18 +677,18 @@ def main() -> None:
         saved_with = ""
         errors: list[str] = []
         for backend in IMAGE_BACKEND_ORDER:
-            if backend in {"gemini", "google", "imagen"}:
-                if not gemini_available:
-                    errors.append("gemini: unavailable (GEMINI_API_KEY not set)")
-                    continue
+            if backend in {"pollinations", "pollinations.ai", "pollination"}:
                 try:
-                    print(f"Generating image {idx:02d} with Google Gemini {GEMINI_IMAGE_MODEL}.")
-                    _save_gemini_image(prompt_text, out_path)
-                    saved_with = f"Gemini {GEMINI_IMAGE_MODEL}"
+                    print(f"Generating image {idx:02d} with Pollinations.ai.")
+                    # Provide a deterministic seed based on index + default seed so it's stable per run
+                    # but different per image.
+                    current_seed = DEFAULT_SEED + idx
+                    _save_pollinations_image(prompt_text, out_path, width, height, current_seed)
+                    saved_with = "Pollinations.ai"
                     break
                 except Exception as exc:
-                    errors.append(f"gemini: {exc}")
-                    print(f"Gemini image generation failed for image {idx:02d}: {exc}")
+                    errors.append(f"pollinations: {exc}")
+                    print(f"Pollinations image generation failed for image {idx:02d}: {exc}")
                     continue
 
             if backend in {"nvidia_flux2", "nvidia-flux2", "flux2", "flux.2", "flux_2"}:

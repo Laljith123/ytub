@@ -618,9 +618,9 @@ def _save_cloudflare_image(prompt_text: str, out_path: Path, width: int | None, 
         "prompt": _enhanced_image_prompt(prompt_text),
     }
     
-    # SDXL models generally perform best at their native resolution.
-    # We omit width/height and let the model decide (usually 1024x1024).
-    # _ensure_target_image will crop/pad it to 1080x1920 afterwards.
+    if width and height:
+        payload["width"] = width
+        payload["height"] = height
 
     last_exc: Exception | None = None
     for attempt in range(1, CLOUDFLARE_IMAGE_RETRIES + 1):

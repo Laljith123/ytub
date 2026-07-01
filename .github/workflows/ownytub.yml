@@ -52,20 +52,19 @@ jobs:
         shell: pwsh
         env:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
-          FREETHEAI_API_KEY: ${{ secrets.FREETHEAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           CAMB_API_KEY: ${{ secrets.CAMB_API_KEY }}
         run: |
           if (-not $env:NVIDIA_API_KEY) {
-            throw "Missing GitHub secret NVIDIA_API_KEY. Text generation now uses NVIDIA Nemotron."
+            throw "Missing GitHub secret NVIDIA_API_KEY. Text generation uses NVIDIA Nemotron."
           }
-          if (-not $env:FREETHEAI_API_KEY) {
-            echo "::warning::Missing GitHub secret FREETHEAI_API_KEY. FreeTheAi image/TTS will be skipped unless another fallback provider is configured."
+          if (-not $env:GEMINI_API_KEY) {
+            throw "Missing GitHub secret GEMINI_API_KEY. Image generation uses Google Gemini Imagen."
           }
           if (-not $env:CAMB_API_KEY) {
-            echo "::warning::Missing GitHub secret CAMB_API_KEY. Voice will use Edge TTS only."
-          } else {
-            echo "NVIDIA_API_KEY and CAMB_API_KEY are configured. Text uses NVIDIA Nemotron; voice order is CAMB, then Edge TTS."
+            throw "Missing GitHub secret CAMB_API_KEY. Voice generation uses Camb AI."
           }
+          echo "All provider keys configured: NVIDIA (text), Gemini (images), Camb AI (voice)."
 
       # 🎲 Always run, but randomize how many to generate (>=1)
       - name: Random Generate Count
@@ -95,7 +94,7 @@ jobs:
       - name: Run Pipeline + Upload
         if: env.RUN_PIPELINE == '1'
         env:
-          FREETHEAI_API_KEY: ${{ secrets.FREETHEAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           CAMB_API_KEY: ${{ secrets.CAMB_API_KEY }}
           JSON_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
@@ -107,29 +106,14 @@ jobs:
           NVIDIA_JSON_RPM_LIMIT: "40"
           NVIDIA_JSON_MAX_ATTEMPTS: "3"
           NVIDIA_JSON_RETRY_WAIT_SECONDS: "20"
-          FREETHEAI_RPM_LIMIT: "10"
-          RATE_LIMIT_CUSHION_SECONDS: "12"
-          FREETHEAI_MAX_ATTEMPTS: "4"
           VOICE: "CAMB"
           TTS_BACKEND: "camb"
-          TTS_FALLBACK_BACKENDS: "edge"
-          FREETHEAI_TTS_MODEL: ${{ vars.FREETHEAI_TTS_MODEL || 'xai/grok-tts' }}
-          FREETHEAI_TTS_VOICE: ${{ vars.FREETHEAI_TTS_VOICE || 'default' }}
-          FREETHEAI_TTS_RESPONSE_FORMAT: "wav"
-          FREETHEAI_TTS_TIMEOUT: "180"
-          FREETHEAI_TTS_MAX_ATTEMPTS: "4"
-          FREETHEAI_TTS_INSTRUCTIONS: ${{ vars.FREETHEAI_TTS_INSTRUCTIONS || 'Speak like a calm friend explaining an interesting real topic. Keep it continuous, natural, and easy to understand. Use a brisk but clear pace with tiny human pauses, never a news-reader tone.' }}
+          TTS_FALLBACK_BACKENDS: ""
           CAMB_LANGUAGE: "en-us"
           CAMB_VOICE_ID: ${{ vars.CAMB_VOICE_ID }}
           CAMB_SPEECH_MODEL: ${{ vars.CAMB_SPEECH_MODEL }}
           CAMB_SPEAKING_RATE: ${{ vars.CAMB_SPEAKING_RATE || '1.04' }}
           CAMB_USER_INSTRUCTIONS: ${{ vars.CAMB_USER_INSTRUCTIONS || 'Sound like a calm friend explaining an interesting real topic. Keep the delivery continuous and human, with only tiny natural pauses. Speak at a brisk but clear pace, and do not drag the pacing.' }}
-          EDGE_TTS_VOICE: "en-US-GuyNeural"
-          EDGE_TTS_RATE: ${{ vars.EDGE_TTS_RATE || '+8%' }}
-          EDGE_TTS_VOLUME: "+0%"
-          EDGE_TTS_PITCH: "-2Hz"
-          RIVA_VOICE: "English-US-RadTTS.Female-1"
-          RIVA_LANGUAGE: "en-US"
           YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN_JSON }}
           YOUTUBE_CHANNEL_ID: ${{ vars.YOUTUBE_CHANNEL_ID }}
           YOUTUBE_HISTORY_ENABLED: "1"
@@ -149,42 +133,34 @@ jobs:
           RUN_UPLOAD: "1"
           UPLOAD_EACH: "1"
           YOUTUBE_LOOP: "0"
-          VIDEO_MIN_SECONDS: "40"
-          VIDEO_MAX_SECONDS: "50"
-          VIDEO_CLIP_SECONDS: "5"
+          VIDEO_MIN_SECONDS: "28"
+          VIDEO_MAX_SECONDS: "38"
+          VIDEO_CLIP_SECONDS: "4"
           VIDEO_WIDTH: "1080"
           VIDEO_HEIGHT: "1920"
           SUBTITLE_RES_X: "1080"
           SUBTITLE_RES_Y: "1920"
           SUBTITLE_POS_Y: "960"
-          VOICE_SPEED: ${{ vars.VOICE_SPEED || '1.08' }}
+          VOICE_SPEED: ${{ vars.VOICE_SPEED || '1.14' }}
           VOICE_GAIN_DB: "0"
           VOICE_CROSSFADE_MS: "45"
           VOICE_DEFAULT_PAUSE_MS: ${{ vars.VOICE_DEFAULT_PAUSE_MS || '75' }}
           VOICE_PAUSE_VARIATION_MS: ${{ vars.VOICE_PAUSE_VARIATION_MS || '35' }}
           VOICE_FINAL_PAUSE_MS: ${{ vars.VOICE_FINAL_PAUSE_MS || '190' }}
           THUMBNAIL_SOURCE: "image"
-          NVIDIA_IMAGE_RETRIES: "3"
-          NVIDIA_IMAGE_RETRY_BACKOFF: "3"
-          NVIDIA_IMAGE_TIMEOUT: "120"
-          NVIDIA_IMAGE_MAX_SECONDS: "150"
-          NVIDIA_IMAGE_DELAY: "2"
           # Hard caps so a stalled API can never hang a stage for ~an hour.
           STAGE_TIMEOUT_SECONDS: "1200"
           IMAGE_STAGE_TIMEOUT_SECONDS: "1500"
-          # Image generation: NVIDIA FLUX.2-klein-4B is primary (autonomous, only needs
-          # the static nvapi- key, no daily check-in), then FLUX.1-schnell, then FreeTheAi.
-          IMAGE_BACKEND_ORDER: "nvidia_flux2,nvidia,freetheai"
-          NVIDIA_FLUX2_WIDTH: "752"
-          NVIDIA_FLUX2_HEIGHT: "1392"
+          # Image generation: Google Gemini Imagen (primary and only backend)
+          IMAGE_BACKEND_ORDER: "gemini"
+          GEMINI_IMAGE_MODEL: ${{ vars.GEMINI_IMAGE_MODEL || 'imagen-4.0-generate-001' }}
+          GEMINI_IMAGE_RETRIES: "3"
+          GEMINI_IMAGE_RETRY_BACKOFF: "3"
+          GEMINI_IMAGE_TIMEOUT: "120"
+          VIDEO_TRANSITION_SECONDS: "0.25"
+          VIDEO_TRANSITIONS: "fade,slideleft,slideright,wipeleft,wiperight,circlecrop,radial,fadeblack"
           IMAGE_PROMPT_QUALITY_SUFFIX: ${{ vars.IMAGE_PROMPT_QUALITY_SUFFIX || 'photorealistic, high detail, sharp focus, natural realistic lighting, true-to-life colors, professional cinematography, no text, no watermark, no logo' }}
-          CONTENT_IMAGE_STYLE_NOTE: ${{ vars.CONTENT_IMAGE_STYLE_NOTE || 'photorealistic cinematic documentary still, specific real-world subject and setting, natural directional lighting, shallow depth of field, realistic textures and materials, a clear color palette that matches the mood, no on-screen text, no logos, no watermark' }}
-          FREETHEAI_IMAGE_MODEL: ${{ vars.FREETHEAI_IMAGE_MODEL || 'img/gpt-image-2' }}
-          FREETHEAI_IMAGE_SIZE: ${{ vars.FREETHEAI_IMAGE_SIZE || '1024x1536' }}
-          FREETHEAI_IMAGE_RESPONSE_FORMAT: "b64_json"
-          FREETHEAI_IMAGE_TIMEOUT: "240"
-          FREETHEAI_IMAGE_RETRIES: "3"
-          FREETHEAI_IMAGE_PROMPT_PREFIX: "Create a cinematic, safe, non-graphic vertical YouTube Shorts image. No readable text, no logos, no gore."
+          CONTENT_IMAGE_STYLE_NOTE: ${{ vars.CONTENT_IMAGE_STYLE_NOTE || 'cinematic thriller freeze-frame, dramatic high-contrast lighting with harsh shadows and rim light, shallow depth of field with bokeh, dynamic camera angle such as low angle or dutch tilt or extreme close-up or bird eye, emotionally charged color grading, action moment not static pose, vertical 9:16, no text no logos no watermark' }}
           CONTENT_ENABLE_THINKING: "1"
           CONTENT_STREAM: "1"
           TRENDS_USE_PYTRENDS: "0"
@@ -221,7 +197,7 @@ jobs:
           CONTENT_RETENTION_TRIGGER_MAX_COUNT: "6"
 
           # Voice.py Riva voice-plan config
-          VOICE_PLAN_ENABLED: "0"
+          VOICE_PLAN_ENABLED: "1"
           VOICE_PLAN_MODEL: ${{ vars.VOICE_PLAN_MODEL || 'nvidia/nemotron-3-ultra-550b-a55b' }}
           VOICE_PLAN_BASE_URL: ${{ vars.VOICE_PLAN_BASE_URL || 'https://integrate.api.nvidia.com/v1' }}
           VOICE_PLAN_MAX_ATTEMPTS: "3"
@@ -237,12 +213,6 @@ jobs:
           VOICE_PLAN_MIN_PAUSE_MS: "0"
           VOICE_PLAN_MAX_PAUSE_MS: "700"
           VOICE_SFX_ENABLED: "0"
-
-          # Riva RadTTS API details
-          RIVA_URI: "grpc.nvcf.nvidia.com:443"
-          RIVA_FUNCTION_ID: "5e607c81-7aa6-44ce-a11d-9e08f0a3fe49"
-          RIVA_SAMPLE_RATE_HZ: "22050"
-          RIVA_USE_SSL: "1"
 
           # Thumbnail.py AI planner config
           THUMBNAIL_PLAN_ENABLED: "1"

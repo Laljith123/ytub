@@ -111,17 +111,17 @@ PROMPT_CAMERA_CUES = os.getenv(
 )
 PROMPT_STORY_STRUCTURE = os.getenv(
     "CONTENT_STORY_STRUCTURE",
-    "Choose a fresh structure for the selected topic: conversational hook, verified facts, surprising detail, clear turn, original viewer question",
+    "Tension arc with pattern interrupts: shocking hook that makes the viewer freeze, fast context setup, escalating strangeness with a pattern interrupt every 2-3 scenes, one reveal that reframes everything, a payoff that matters, and an opinion-splitting final question that loops back to the hook",
 )
 PROMPT_STYLE_NOTE = os.getenv(
     "CONTENT_STYLE_NOTE",
-    "natural friend explaining clearly, curious and skeptical but respectful, goosebump tension when the topic supports it, never news-reader, no repeated template phrases",
+    "suspicious friend telling you something disturbing they just discovered, urgent but controlled delivery, builds dread and curiosity with every sentence, uses strategic pauses and sudden reveals, treats the viewer as smart enough to handle the real details, never news-reader, never Wikipedia summary, no repeated phrases",
 )
 PROMPT_IMAGE_STYLE_NOTE = os.getenv(
     "CONTENT_IMAGE_STYLE_NOTE",
-    "photorealistic cinematic documentary still, specific real-world subject and setting, "
-    "natural directional lighting, shallow depth of field, realistic textures and materials, "
-    "a clear color palette that matches the mood, no on-screen text, no logos, no watermark",
+    "cinematic thriller freeze-frame with dramatic high-contrast lighting, harsh shadows and rim light, "
+    "shallow depth of field with bokeh, dynamic camera angle (low angle or dutch tilt or extreme close-up), "
+    "emotionally charged color grading, hyper-realistic, action moment not static pose, no text, no logos, no watermark",
 )
 BANNED_SCRIPT_PHRASES = tuple(
     phrase.strip().lower()
@@ -877,9 +877,9 @@ def _coerce_images(images: list[str], script: list[str], seed: str) -> list[str]
     while len(images) < len(script):
         scene = script[len(images)]
         images.append(
-            "photorealistic documentary b-roll of "
-            f"{_fit_text(seed, 60)}, visual detail from: {_fit_text(scene, 90)}, "
-            "natural location, soft realistic light, vertical 9:16 framing, slow dolly"
+            "cinematic thriller freeze-frame of "
+            f"{_fit_text(seed, 60)}, dramatic moment from: {_fit_text(scene, 90)}, "
+            "high-contrast lighting, dynamic camera angle, vertical 9:16 framing, intense close-up"
         )
     return images
 
@@ -1155,36 +1155,36 @@ def _visual_subject(case_name: str) -> str:
 def _fallback_images(case_name: str, count: int) -> list[str]:
     subject = _visual_subject(case_name)
     settings = [
-        "quiet residential street with distant porch lights",
-        "archive desk with maps notes and soft lamp light",
-        "empty roadside at blue hour with rain on asphalt",
-        "police station exterior seen from across the street",
-        "small town intersection with no visible faces",
-        "close view of a corkboard with blurred public clippings",
-        "dim hallway with an open doorway and untouched shadows",
-        "tabletop with a folded map and an old phone",
-        "wide exterior of a courthouse walkway at dusk",
-        "quiet family living room detail with a framed silhouette",
+        "hand reaching for a door handle in harsh shadow with rim-light from behind",
+        "extreme close-up of a map with a red circle drawn around one location under dramatic top-light",
+        "figure silhouetted against car headlights on a rain-soaked road at night",
+        "police evidence board with red string connections seen through frosted glass",
+        "empty intersection with a single flickering streetlight casting long shadows",
+        "close-up of a phone screen glowing in a dark room with tense blue light",
+        "half-open door revealing a dark hallway with a sliver of golden light",
+        "hands arranging photographs on a table under a single harsh desk lamp",
+        "courthouse steps at dusk with dramatic storm clouds and orange rim lighting",
+        "shattered picture frame on a floor with dramatic shallow depth of field",
     ]
     actions = [
-        "camera drifting slowly toward the scene",
-        "papers being arranged by unseen hands",
-        "headlights passing in the far distance",
-        "wind moving loose papers near the entrance",
-        "streetlights flickering over an empty crosswalk",
-        "a marker pin being placed on the map",
-        "dust floating through a narrow beam of light",
-        "a notebook page turning in low light",
-        "rain reflecting across the walkway",
-        "curtains shifting beside a quiet window",
+        "camera pushing in fast toward a reveal",
+        "a hand slamming down on scattered documents",
+        "headlights sweeping across revealing a frozen moment",
+        "wind tearing papers from a board in slow motion",
+        "a flashlight beam cutting through pitch darkness",
+        "a finger pointing at a circled detail on a document",
+        "glass shattering in a freeze-frame with debris suspended",
+        "a drawer being yanked open revealing hidden contents",
+        "rain drops frozen mid-air with dramatic backlight",
+        "a curtain being pulled back to reveal something unexpected",
     ]
     times = ["night", "late evening", "blue hour", "early morning", "dusk"]
-    cues = ["slow dolly", "tracking shot", "handheld", "wide establishing", "close-up"]
+    cues = ["fast push-in", "whip pan", "handheld urgent", "dutch tilt", "extreme close-up"]
 
     images: list[str] = []
     for i in range(count):
         images.append(
-            "photorealistic documentary b-roll of "
+            "cinematic thriller freeze-frame of "
             f"{subject}, {settings[i % len(settings)]}, {times[i % len(times)]}, "
             f"{actions[i % len(actions)]}, vertical 9:16 framing, {cues[i % len(cues)]}"
         )
@@ -1729,7 +1729,7 @@ def _build_prompt(trends: list[str], repeated: list[str], channel_titles: list[s
         "STRICT RULES: "
         f"0. title MUST be under {TITLE_MAX_CHARS} characters and written for curiosity, not clickbait lies. "
         f"1. hook MUST be under {HOOK_MAX_WORDS} words and MUST create curiosity, danger, contradiction, or an unanswered question. "
-        "2. The first script item MUST deliver the hook immediately with a sudden-stop beat or sharp curiosity gap. "
+        "2. The first script item MUST use a proven hook formula: (a) START WITH THE ENDING and explain how we got there, (b) IMPOSSIBLE QUESTION that sounds wrong but is true, (c) CONFRONTATION between two contradicting facts, or (d) COUNTDOWN like 'In exactly X hours everything changed.' The first 2 seconds must make the viewer think 'wait what?' — never start with context, setup, or background. "
         "3. script MUST be a list of narration scenes. "
         "4. image MUST be a list of image prompts. "
         "5. script and image lists MUST be the SAME LENGTH. "
@@ -1739,11 +1739,13 @@ def _build_prompt(trends: list[str], repeated: list[str], channel_titles: list[s
         "9. No filler, no recap, no repeated phrasing, no generic niche-template lines. "
         "10. Include only core facts: who, what, where, when, how, what was strange, and why it still matters if known. "
         "11. Make the narration human and suspicious, like a friend saying, 'listen to this part.' Use short questions, natural pauses, and sudden-stop beats. Keep every statement accurate and specific; prefer precise, checkable details over hype, and clearly mark anything uncertain as uncertain. "
+        "11b. PACING: The script must follow a tension arc, NOT a flat list of facts. Structure: HOOK (shock/question) then CONTEXT (fast setup) then ESCALATION (things get stranger) then REVEAL (the detail that changes everything) then PAYOFF (why it matters) then QUESTION (opinion splitter). Every 2-3 scenes, include a pattern interrupt — a short unexpected sentence like 'But here is where it gets strange' or 'This is the part nobody talks about' or 'Now pay attention to this detail.' These re-hook viewers who are about to swipe away. "
         "12. Do NOT use slang, memes, stage directions, or anchor phrases. Avoid words like lowkey, no cap, hold up, breaking news, and let's dive in. "
         "13. Be respectful when the topic involves real people, harm, money, health, politics, or private lives. "
         "14. The final script item MUST ask viewers for comments, theories, thoughts, or what they noticed, "
         "and it MUST end with a question. Make this line original every time; do NOT use a fixed template sentence. "
-        "15. Each image prompt MUST visually depict the exact concrete content of its matching narration scene (same subject, same place, same objects, same moment), so the visuals and the voice stay tightly aligned. "
+        "14b. LOOPING: The final question should circle back thematically to the hook mystery or shock. When a viewer reaches the end, they should feel compelled to rewatch the opening with new context. "
+        "15. Each image prompt MUST depict a DRAMATIC MOMENT from its matching narration scene, not a static establishing shot. Show action, tension, or a striking visual: a hand reaching, a door opening, something falling, a face in shadow, an extreme close-up of a critical detail. Every image should feel like a freeze-frame from a thriller. "
         f"16. Image style and quality: {PROMPT_IMAGE_STYLE_NOTE}. Every image prompt MUST name a clear main subject, the setting/background, time-of-day, weather, lighting direction, mood, one specific action or moment, vertical 9:16 framing, and one camera cue. "
         f"17. Camera cues can follow this style: {camera_cue_line}. "
         "18. Keep recurring people, clothing, props, color palette, weather, and locations visually consistent across every scene, and re-describe them concretely in each prompt instead of referring back to earlier scenes. "

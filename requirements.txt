@@ -7,8 +7,5 @@ requests
 google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
-nvidia-riva-client
-grpcio
-protobuf
-edge-tts
+google-genai
 camb-sdk

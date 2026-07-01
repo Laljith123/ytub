@@ -104,14 +104,25 @@ def _build_segments(
 
     for idx, (image, duration) in enumerate(zip(images, durations), start=1):
         frames = max(1, int(math.ceil(duration * fps)))
-        zoom_in = idx % 2 == 1
-        z_start = 1.00 if zoom_in else 1.04
-        z_end = 1.04 if zoom_in else 1.00
+        # Dramatic zoom patterns: 12% zoom range (3x stronger than original 4%)
+        patterns = [
+            (1.00, 1.12),   # Strong zoom in
+            (1.12, 1.00),   # Pull-back reveal
+            (1.00, 1.08),   # Medium zoom in
+            (1.08, 1.00),   # Medium zoom out
+        ]
+        z_start, z_end = patterns[idx % len(patterns)]
         denom = max(frames - 1, 1)
         z_expr = f"{z_start}+({z_end}-{z_start})*(1-cos(PI*on/{denom}))/2"
 
-        x_expr = "iw/2-(iw/zoom/2)"
-        y_expr = "ih/2-(ih/zoom/2)"
+        # Alternate pan targets for visual variety
+        pan_offsets = [
+            ("iw/2-(iw/zoom/2)", "ih/2-(ih/zoom/2)"),                 # Center
+            ("iw/2-(iw/zoom/2)-iw*0.03", "ih/2-(ih/zoom/2)"),         # Slight left
+            ("iw/2-(iw/zoom/2)+iw*0.03", "ih/2-(ih/zoom/2)"),         # Slight right
+            ("iw/2-(iw/zoom/2)", "ih/2-(ih/zoom/2)-ih*0.02"),         # Slight up
+        ]
+        x_expr, y_expr = pan_offsets[idx % len(pan_offsets)]
 
         vf = (
             f"scale={width}:{height}:force_original_aspect_ratio=increase,"

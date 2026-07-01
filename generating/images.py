@@ -54,9 +54,15 @@ DEFAULT_HEIGHT = 1920
 
 IMAGE_BACKEND_ORDER = [
     item.strip().lower()
-    for item in os.getenv("IMAGE_BACKEND_ORDER", "nvidia_flux2,nvidia,freetheai").split(",")
+    for item in os.getenv("IMAGE_BACKEND_ORDER", "gemini").split(",")
     if item.strip()
 ]
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "imagen-4.0-generate-001").strip()
+GEMINI_IMAGE_TIMEOUT = int(os.getenv("GEMINI_IMAGE_TIMEOUT", "120"))
+GEMINI_IMAGE_RETRIES = int(os.getenv("GEMINI_IMAGE_RETRIES", "3"))
+GEMINI_IMAGE_BACKOFF = float(os.getenv("GEMINI_IMAGE_RETRY_BACKOFF", "3"))
 FREETHEAI_IMAGE_MODEL = os.getenv("FREETHEAI_IMAGE_MODEL", "img/gpt-image-2").strip() or "img/gpt-image-2"
 FREETHEAI_IMAGE_TIMEOUT = int(os.getenv("FREETHEAI_IMAGE_TIMEOUT", "240"))
 FREETHEAI_IMAGE_RETRIES = int(os.getenv("FREETHEAI_IMAGE_RETRIES", "3"))
@@ -596,22 +602,58 @@ def _clean_api_key(value: str | None) -> str:
     return key
 
 
+def _save_gemini_image(prompt_text: str, out_path: Path) -> None:
+    """Generate an image using Google Gemini Imagen API."""
+    if not GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY is missing.")
+
+    from google import genai
+    from google.genai import types
+
+    client = genai.Client(api_key=GEMINI_API_KEY)
+    last_exc: Exception | None = None
+    for attempt in range(1, GEMINI_IMAGE_RETRIES + 1):
+        try:
+            response = client.models.generate_images(
+                model=GEMINI_IMAGE_MODEL,
+                prompt=_enhanced_image_prompt(prompt_text),
+                config=types.GenerateImagesConfig(
+                    number_of_images=1,
+                    output_mime_type="image/png",
+                ),
+            )
+            if not response.generated_images:
+                raise RuntimeError("Gemini returned no images.")
+            image_data = response.generated_images[0].image
+            if hasattr(image_data, "image_bytes") and image_data.image_bytes:
+                out_path.write_bytes(image_data.image_bytes)
+            else:
+                image_data.save(str(out_path))
+            return
+        except Exception as exc:
+            last_exc = exc
+            if attempt < GEMINI_IMAGE_RETRIES:
+                sleep_for = GEMINI_IMAGE_BACKOFF * attempt
+                print(f"Gemini image attempt {attempt}/{GEMINI_IMAGE_RETRIES} failed: {exc}. Retrying in {sleep_for:.0f}s...")
+                time.sleep(sleep_for)
+    raise RuntimeError(f"Gemini image generation failed after {GEMINI_IMAGE_RETRIES} attempts: {last_exc}") from last_exc
+
+
 def main() -> None:
     load_dotenv()
     api_key = _clean_api_key(os.getenv("NVIDIA_API_KEY"))
     nvidia_available = bool(api_key and api_key.startswith("nvapi-"))
-    if api_key and not api_key.startswith("nvapi-"):
-        print(
-            "NVIDIA_API_KEY does not look like an NVIDIA API key. "
-            "NVIDIA image fallback will be skipped."
-        )
+    gemini_available = bool(GEMINI_API_KEY)
     if not api_key:
         print("NVIDIA_API_KEY is not set. NVIDIA image fallback will be skipped.")
+    if not gemini_available:
+        print("GEMINI_API_KEY is not set. Gemini image backend will be skipped.")
     if not IMAGE_BACKEND_ORDER:
         raise RuntimeError("IMAGE_BACKEND_ORDER is empty.")
-    if not nvidia_available and "freetheai" not in IMAGE_BACKEND_ORDER:
+    has_any_backend = gemini_available or nvidia_available
+    if not has_any_backend:
         raise RuntimeError(
-            "No usable image backend is available. Set NVIDIA_API_KEY or include freetheai in IMAGE_BACKEND_ORDER."
+            "No usable image backend is available. Set GEMINI_API_KEY or NVIDIA_API_KEY."
         )
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -649,6 +691,20 @@ def main() -> None:
         saved_with = ""
         errors: list[str] = []
         for backend in IMAGE_BACKEND_ORDER:
+            if backend in {"gemini", "google", "imagen"}:
+                if not gemini_available:
+                    errors.append("gemini: unavailable (GEMINI_API_KEY not set)")
+                    continue
+                try:
+                    print(f"Generating image {idx:02d} with Google Gemini {GEMINI_IMAGE_MODEL}.")
+                    _save_gemini_image(prompt_text, out_path)
+                    saved_with = f"Gemini {GEMINI_IMAGE_MODEL}"
+                    break
+                except Exception as exc:
+                    errors.append(f"gemini: {exc}")
+                    print(f"Gemini image generation failed for image {idx:02d}: {exc}")
+                    continue
+
             if backend in {"nvidia_flux2", "nvidia-flux2", "flux2", "flux.2", "flux_2"}:
                 if not nvidia_available:
                     errors.append("nvidia_flux2: unavailable")

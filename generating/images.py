@@ -618,11 +618,9 @@ def _save_cloudflare_image(prompt_text: str, out_path: Path, width: int | None, 
         "prompt": _enhanced_image_prompt(prompt_text),
     }
     
-    # SDXL models generally perform best at 1024x1024 or specific buckets, but we can pass them along.
-    # ffmpeg (_ensure_target_image) will crop/pad to the exact vertical size.
-    if width and height:
-        payload["width"] = width
-        payload["height"] = height
+    # SDXL models generally perform best at their native resolution.
+    # We omit width/height and let the model decide (usually 1024x1024).
+    # _ensure_target_image will crop/pad it to 1080x1920 afterwards.
 
     last_exc: Exception | None = None
     for attempt in range(1, CLOUDFLARE_IMAGE_RETRIES + 1):
@@ -642,6 +640,17 @@ def _save_cloudflare_image(prompt_text: str, out_path: Path, width: int | None, 
                     raise RuntimeError(f"Unexpected JSON format from Cloudflare: {data}")
             else:
                 out_path.write_bytes(response.content)
+                
+            # CROSS-CHECK: Verify the image is valid and not corrupted
+            if not out_path.exists() or out_path.stat().st_size < 100:
+                raise RuntimeError("Generated image is empty or too small.")
+                
+            from PIL import Image
+            try:
+                with Image.open(out_path) as img:
+                    img.verify()
+            except Exception as pil_exc:
+                raise RuntimeError(f"Generated image is corrupt: {pil_exc}")
                 
             return
         except Exception as exc:

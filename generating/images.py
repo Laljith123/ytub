@@ -54,12 +54,15 @@ DEFAULT_HEIGHT = 1920
 
 IMAGE_BACKEND_ORDER = [
     item.strip().lower()
-    for item in os.getenv("IMAGE_BACKEND_ORDER", "pollinations").split(",")
+    for item in os.getenv("IMAGE_BACKEND_ORDER", "cloudflare").split(",")
     if item.strip()
 ]
 
-POLLINATIONS_IMAGE_RETRIES = int(os.getenv("POLLINATIONS_IMAGE_RETRIES", "3"))
-POLLINATIONS_IMAGE_BACKOFF = float(os.getenv("POLLINATIONS_IMAGE_RETRY_BACKOFF", "3"))
+CLOUDFLARE_API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN", "").strip()
+CLOUDFLARE_ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip()
+CLOUDFLARE_IMAGE_MODEL = os.getenv("CLOUDFLARE_IMAGE_MODEL", "@cf/bytedance/stable-diffusion-xl-lightning").strip()
+CLOUDFLARE_IMAGE_RETRIES = int(os.getenv("CLOUDFLARE_IMAGE_RETRIES", "3"))
+CLOUDFLARE_IMAGE_BACKOFF = float(os.getenv("CLOUDFLARE_IMAGE_RETRY_BACKOFF", "3"))
 FREETHEAI_IMAGE_MODEL = os.getenv("FREETHEAI_IMAGE_MODEL", "img/gpt-image-2").strip() or "img/gpt-image-2"
 FREETHEAI_IMAGE_TIMEOUT = int(os.getenv("FREETHEAI_IMAGE_TIMEOUT", "240"))
 FREETHEAI_IMAGE_RETRIES = int(os.getenv("FREETHEAI_IMAGE_RETRIES", "3"))
@@ -599,46 +602,66 @@ def _clean_api_key(value: str | None) -> str:
     return key
 
 
-def _save_pollinations_image(prompt_text: str, out_path: Path, width: int | None, height: int | None, seed: int) -> None:
-    """Generate an image using the completely free Pollinations.ai API."""
-    import urllib.parse
+def _save_cloudflare_image(prompt_text: str, out_path: Path, width: int | None, height: int | None, seed: int) -> None:
+    """Generate an image using Cloudflare Workers AI."""
+    if not CLOUDFLARE_API_TOKEN or not CLOUDFLARE_ACCOUNT_ID:
+        raise RuntimeError("CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is missing.")
+
+    url = f"https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/{CLOUDFLARE_IMAGE_MODEL}"
     
-    # We enforce a vertical default if sizes aren't specified.
-    req_w = width or 1080
-    req_h = height or 1920
+    headers = {
+        "Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
+    payload: Dict[str, Any] = {
+        "prompt": _enhanced_image_prompt(prompt_text),
+    }
     
-    encoded_prompt = urllib.parse.quote(_enhanced_image_prompt(prompt_text))
-    # nologo=true removes the watermark on pollination images.
-    url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={req_w}&height={req_h}&seed={seed}&nologo=true"
-    
+    # SDXL models generally perform best at 1024x1024 or specific buckets, but we can pass them along.
+    # ffmpeg (_ensure_target_image) will crop/pad to the exact vertical size.
+    if width and height:
+        payload["width"] = width
+        payload["height"] = height
+
     last_exc: Exception | None = None
-    for attempt in range(1, POLLINATIONS_IMAGE_RETRIES + 1):
+    for attempt in range(1, CLOUDFLARE_IMAGE_RETRIES + 1):
         try:
-            response = requests.get(url, timeout=120)
+            response = requests.post(url, headers=headers, json=payload, timeout=120)
             _raise_for_status_with_detail(response)
             
-            # They just return the raw image directly
             content_type = response.headers.get("Content-Type", "")
-            if not content_type.startswith("image/"):
-                raise RuntimeError(f"Pollinations returned non-image content type: {content_type}")
+            if content_type.startswith("image/"):
+                out_path.write_bytes(response.content)
+            elif content_type.startswith("application/json"):
+                data = response.json()
+                if "result" in data and "image" in data["result"]:
+                    b64 = data["result"]["image"]
+                    _write_base64_image(b64, out_path)
+                else:
+                    raise RuntimeError(f"Unexpected JSON format from Cloudflare: {data}")
+            else:
+                out_path.write_bytes(response.content)
                 
-            out_path.write_bytes(response.content)
             return
         except Exception as exc:
             last_exc = exc
-            if attempt < POLLINATIONS_IMAGE_RETRIES:
-                sleep_for = POLLINATIONS_IMAGE_BACKOFF * attempt
-                print(f"Pollinations image attempt {attempt}/{POLLINATIONS_IMAGE_RETRIES} failed: {exc}. Retrying in {sleep_for:.0f}s...")
+            if attempt < CLOUDFLARE_IMAGE_RETRIES:
+                sleep_for = CLOUDFLARE_IMAGE_BACKOFF * attempt
+                print(f"Cloudflare image attempt {attempt}/{CLOUDFLARE_IMAGE_RETRIES} failed: {exc}. Retrying in {sleep_for:.0f}s...")
                 time.sleep(sleep_for)
-    raise RuntimeError(f"Pollinations image generation failed after {POLLINATIONS_IMAGE_RETRIES} attempts: {last_exc}") from last_exc
+    raise RuntimeError(f"Cloudflare image generation failed after {CLOUDFLARE_IMAGE_RETRIES} attempts: {last_exc}") from last_exc
 
 
 def main() -> None:
     load_dotenv()
     api_key = _clean_api_key(os.getenv("NVIDIA_API_KEY"))
     nvidia_available = bool(api_key and api_key.startswith("nvapi-"))
+    cloudflare_available = bool(CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID)
     if not api_key:
         print("NVIDIA_API_KEY is not set. NVIDIA image fallback will be skipped.")
+    if not cloudflare_available:
+        print("CLOUDFLARE_API_TOKEN or ACCOUNT_ID is not set. Cloudflare backend will be skipped.")
     if not IMAGE_BACKEND_ORDER:
         raise RuntimeError("IMAGE_BACKEND_ORDER is empty.")
 
@@ -677,18 +700,19 @@ def main() -> None:
         saved_with = ""
         errors: list[str] = []
         for backend in IMAGE_BACKEND_ORDER:
-            if backend in {"pollinations", "pollinations.ai", "pollination"}:
+            if backend in {"cloudflare", "cf"}:
+                if not cloudflare_available:
+                    errors.append("cloudflare: unavailable (missing secrets)")
+                    continue
                 try:
-                    print(f"Generating image {idx:02d} with Pollinations.ai.")
-                    # Provide a deterministic seed based on index + default seed so it's stable per run
-                    # but different per image.
+                    print(f"Generating image {idx:02d} with Cloudflare {CLOUDFLARE_IMAGE_MODEL}.")
                     current_seed = DEFAULT_SEED + idx
-                    _save_pollinations_image(prompt_text, out_path, width, height, current_seed)
-                    saved_with = "Pollinations.ai"
+                    _save_cloudflare_image(prompt_text, out_path, width, height, current_seed)
+                    saved_with = "Cloudflare"
                     break
                 except Exception as exc:
-                    errors.append(f"pollinations: {exc}")
-                    print(f"Pollinations image generation failed for image {idx:02d}: {exc}")
+                    errors.append(f"cloudflare: {exc}")
+                    print(f"Cloudflare image generation failed for image {idx:02d}: {exc}")
                     continue
 
             if backend in {"nvidia_flux2", "nvidia-flux2", "flux2", "flux.2", "flux_2"}:

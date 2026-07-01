@@ -52,15 +52,20 @@ jobs:
         shell: pwsh
         env:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CAMB_API_KEY: ${{ secrets.CAMB_API_KEY }}
         run: |
           if (-not $env:NVIDIA_API_KEY) {
             throw "Missing GitHub secret NVIDIA_API_KEY. Text generation uses NVIDIA Nemotron."
           }
+          if (-not $env:CLOUDFLARE_API_TOKEN -or -not $env:CLOUDFLARE_ACCOUNT_ID) {
+            throw "Missing GitHub secret CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID. Image generation uses Cloudflare."
+          }
           if (-not $env:CAMB_API_KEY) {
             throw "Missing GitHub secret CAMB_API_KEY. Voice generation uses Camb AI."
           }
-          echo "All provider keys configured: NVIDIA (text), Pollinations (images, keyless), Camb AI (voice)."
+          echo "All provider keys configured: NVIDIA (text), Cloudflare (images), Camb AI (voice)."
 
       # 🎲 Always run, but randomize how many to generate (>=1)
       - name: Random Generate Count
@@ -91,6 +96,8 @@ jobs:
         if: env.RUN_PIPELINE == '1'
         env:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CAMB_API_KEY: ${{ secrets.CAMB_API_KEY }}
           JSON_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           JSON_BASE_URL: ${{ vars.JSON_BASE_URL || 'https://integrate.api.nvidia.com/v1' }}
@@ -146,8 +153,11 @@ jobs:
           # Hard caps so a stalled API can never hang a stage for ~an hour.
           STAGE_TIMEOUT_SECONDS: "1200"
           IMAGE_STAGE_TIMEOUT_SECONDS: "1500"
-          # Image generation: completely free, keyless Pollinations.ai
-          IMAGE_BACKEND_ORDER: "pollinations"
+          # Image generation: Cloudflare Workers AI
+          IMAGE_BACKEND_ORDER: "cloudflare"
+          CLOUDFLARE_IMAGE_MODEL: ${{ vars.CLOUDFLARE_IMAGE_MODEL || '@cf/bytedance/stable-diffusion-xl-lightning' }}
+          CLOUDFLARE_IMAGE_RETRIES: "3"
+          CLOUDFLARE_IMAGE_RETRY_BACKOFF: "3"
           VIDEO_TRANSITION_SECONDS: "0.25"
           VIDEO_TRANSITIONS: "fade,slideleft,slideright,wipeleft,wiperight,circlecrop,radial,fadeblack"
           IMAGE_PROMPT_QUALITY_SUFFIX: ${{ vars.IMAGE_PROMPT_QUALITY_SUFFIX || 'photorealistic, high detail, sharp focus, natural realistic lighting, true-to-life colors, professional cinematography, no text, no watermark, no logo' }}
